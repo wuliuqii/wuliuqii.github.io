@@ -26,7 +26,7 @@ jobs:
             - name: Deploy
               uses: peaceiris/actions-gh-pages@v3
               with:
-                  DEPLOY_KEY: ${{ secrets.GITHUB_TOKEN }}
+                  DEPLOY_KEY: ${{ secrets.ACTIONS_DEPLOY_KEY }}
                   EXTERNAL_REPOSITORY: wuliuqii/wuliuqii.github.io
                   PUBLISH_BRANCH: main
                   PUBLISH_DIR: ./public
