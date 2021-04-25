@@ -1,0 +1,34 @@
+baseURL = "https://gallonhu.github.io/"
+languageCode = "en-us"
+title = "Gallon"
+theme = "contrast"
+description = "Never settle, never will."
+newContentEditor = "nvim"
+enableGitInfo = true
+
+[params]
+    description = "写的一手好 Hello World"
+
+[menu]
+  [[menu.remote]]
+  name = "Github"
+  url = "https://github.com/GallonHu"
+  identifier = "github"
+  weight = 3.0
+
+  [[menu.remote]]
+  name = "Subscribe"
+  url = "/index.xml"
+  identifier = "rss"
+  weight = 4.0
+
+# [params]
+#   description = "Blog meta description."
+#   githubUsername = "gallonhu"
+#   tagline = "Anything in life worth doing is worth overdoing. Moderation is for cowards."
+
+# [markup]
+#   defaultMarkdownHandler = "goldmark"
+#   [markup.goldmark]
+#     [markup.goldmark.renderer]
+#       unsafe = true

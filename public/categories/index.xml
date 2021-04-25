@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Categories on Gallon</title>
+    <link>https://gallonhu.github.io/categories/</link>
+    <description>Recent content in Categories on Gallon</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Thu, 02 Apr 2020 10:34:27 +0800</lastBuildDate>
+    
+	<atom:link href="https://gallonhu.github.io/categories/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>OS</title>
+      <link>https://gallonhu.github.io/categories/os/</link>
+      <pubDate>Thu, 02 Apr 2020 10:34:27 +0800</pubDate>
+      
+      <guid>https://gallonhu.github.io/categories/os/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>GIL</title>
+      <link>https://gallonhu.github.io/categories/gil/</link>
+      <pubDate>Mon, 30 Mar 2020 10:10:58 +0800</pubDate>
+      
+      <guid>https://gallonhu.github.io/categories/gil/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Python</title>
+      <link>https://gallonhu.github.io/categories/python/</link>
+      <pubDate>Mon, 30 Mar 2020 10:10:58 +0800</pubDate>
+      
+      <guid>https://gallonhu.github.io/categories/python/</guid>
+      <description></description>
+    </item>
+    
+  </channel>
+</rss>

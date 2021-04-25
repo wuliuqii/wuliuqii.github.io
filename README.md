@@ -1,1 +1,1 @@
-# wuliuqii.github.io
+Hugo blog

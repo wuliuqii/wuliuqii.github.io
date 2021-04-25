@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Gallon</title>
+    <link>https://gallonhu.github.io/</link>
+    <description>Recent content on Gallon</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Thu, 02 Apr 2020 10:34:27 +0800</lastBuildDate>
+    
+	<atom:link href="https://gallonhu.github.io/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>Ostep  Virtualization</title>
+      <link>https://gallonhu.github.io/posts/ostep-virtualization/</link>
+      <pubDate>Thu, 02 Apr 2020 10:34:27 +0800</pubDate>
+      
+      <guid>https://gallonhu.github.io/posts/ostep-virtualization/</guid>
+      <description>CPU 虚拟化 操作系统通过低级机制和高级策略实现 CPU 虚拟化。机制就是一些低级方法和协议，如上下切换，时分共享。策略是在操作系统中作出某种决定的算法。
+ 你可以将机制看 成为系统的“如何（how）”问题提供答案。例如，操作系统如何执行上下文切换？策略为“哪个（which）” 问题提供答案。例如，操作系统现在应该运行哪个进程？将两者分开可以轻松地改变策略，而不必重新考虑机制，因此这是一种模块化（modularity）的形式，一种通用的软件设计原则。
+ 进程 进程：运行中的程序。
+进程 API 包括：创建（create）、销毁（destroy）、等待（wait）、其他控制（miscellaneous control）、状态（statu）。
+进程创建 操作系统如何启动并运行一个进程？
+操作系统运行程序必须做的第一件事是将代码和所有静态数据（例如初始化变量）加载到内存中，加载到进程的地址空间中。程序最初以某种可执行格式驻留在磁盘上 （disk，或者在某些现代系统中，在基于闪存的 SSD 上）。因此，将程序和静态数据加载到内存中的过程，需要操作系统从磁盘读取这些字节，并将它们放在内存中的某处（见下图）
+将代码和静态数据加载到内存后，操作系统在运行此进程之前还需要执行其他一些操作，为程序的运行时栈（runtime stack）和堆分配一些内存。在 C 程序使用栈存放局部变量、函数参数和返回地址。操作系统分配这些内存，并提供给进程。 操作系统也可能会用参数初始化栈。具体来说，它会将参数填入 main()函数，即 argc 和 argv 数组。堆用于显式请求的动态分配数据。程序通过调用 malloc() 来请求这样的空间，并通过调用 free() 来明确地释放它。数据结构（如链表、散列表、树和其他有趣的数据结构）需要堆。起初堆会很小。随着程序运行，通过 malloc() 请求更多内存，操作系统可能会参与分配更多内存给进程，以满足这些调用。
+操作系统还将执行一些其他初始化任务，特别是与输入/输出（I/O）相关的任务。例如，在 UNIX 系统中，默认情况下每个进程都有 3 个打开的文件描述符（file descriptor），用于标准输入、输出和错误。
+通过将代码和静态数据加载到内存中，通过创建和初始化栈以及执行与 I/O 设置相关的其他工作，OS 现在（终于）为程序执行搭好了舞台。然后它有最后一项任务：启动程序， 在入口处运行，即 main()。通过跳转到 main()例程，OS 将 CPU 的控制权转移到新创建的进程中，从而程序开始执行。
+进程状态 进程可以处于以下 3 种状态之一。
+  运行（running）：在运行状态下，进程正在处理器上运行。这意味着它正在执行指令。
+  就绪（ready）：在就绪状态下，进程已准备好运行，但由于某种原因，操作系统选择不在此时运行。
+  阻塞（blocked）：在阻塞状态下，一个进程执行了某种操作，直到发生其他事件时才会准备运行。一个常见的例子是，当进程向磁盘发起 I/O 请求时，它会被阻塞， 因此其他进程可以使用处理器。</description>
+    </item>
+    
+    <item>
+      <title>Python GIL 的前世今生</title>
+      <link>https://gallonhu.github.io/posts/python-gil-%E7%9A%84%E5%89%8D%E4%B8%96%E4%BB%8A%E7%94%9F/</link>
+      <pubDate>Mon, 30 Mar 2020 10:10:58 +0800</pubDate>
+      
+      <guid>https://gallonhu.github.io/posts/python-gil-%E7%9A%84%E5%89%8D%E4%B8%96%E4%BB%8A%E7%94%9F/</guid>
+      <description>简而言之，Python 的全局解释器（GIL）是一种互斥锁，它仅允许一个线程持有 Python 解释器的控制权。这意味着在任何时间点只有一个线程处于执行状态。对于执行单线程程序的开发人员而言，GIL 的影响并不明显，但它可能是 CPU 密集和多线程代码的性能瓶颈。
+由于即使在具有多个 CPU 内核的多线程体系结构中，GIL 一次仅允许一个线程执行，GIL 因此以 Python 的“臭名昭著”功能而闻名。
+在本文中，您将学习到 GIL 如何影响 Python 程序的性能，以及如何减轻 GIL 对代码的影响。本文所有代码运行环境为
+[I] ➜ python --version Python 3.7.6 GIL 为 Python 解决了什么问题 Python 使用引用计数进行内存管理。这意味着用 Python 创建的对象具有引用计数变量，该变量跟踪指向该对象的引用数，当词计数到达零时，将释放该对象占用的内存。
+下面是一个简短的代码示例，以演示引用计数的工作原理：
+&amp;gt;&amp;gt;&amp;gt; a = [] &amp;gt;&amp;gt;&amp;gt; b = a &amp;gt;&amp;gt;&amp;gt; sys.getrefcount(a) 3 在上面示例中，空列表对象 [] 的引用计数为3，它被 a，b 和传入 sys.getrefcount() 的参数引用。
+回到GIL：
+问题在于该引用计数变量需要保护，以防止两个线程同时增加或减少其值的竞争状态。如果发生这种情况，则可能导致未释放的内存泄漏，更糟糕的是，在仍然存在对该对象引用的情况下，错误地释放了内存。这可能会导致程序崩溃或其他奇怪的错误。
+通过将锁添加到跨线程共享的所有数据结构中，以确保它们不会被不一致地修改，可以保持此引用计数变量的安全。但是对每个对象或者对象组加锁意味着多个锁将同时存在，这将导致另外一个问题——死锁（死锁只可能发生在有多个锁的情况下）。另一个副作用就是重复的请求和释放锁而导致性能降低。
+GIL 是解释器本身的单一锁，它添加了一个规则，即任何 Python 字节码的执行都需要获取解释锁。这可以防止死锁（因为只有一个锁），并且不会带来太多的性能开销。但它也会使所有 CPU 密集型的 Python 程序成为单线程。
+尽管解释器用于其他语言（例如 Ruby），但 GIL 并不是解决次问题的唯一方法。某些语言通过使用引用计数以外的方法（例如垃圾回收）来避免使用 GIL 对线程安全的内存管理。另一方面，这意味着这些语言必须通过添其他性能提升功能（例如 JIT 编译器）来弥补 GIL 的单线程性能优势的损失。</description>
+    </item>
+    
+  </channel>
+</rss>

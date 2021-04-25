@@ -1,0 +1,54 @@
+{{ define "main" }}
+
+{{ $Pages := .Pages }}
+
+{{ if .IsHome }}
+{{ $Pages = where site.RegularPages "Type" "in" .Site.Params.mainSections }}
+{{ end }}
+
+{{ if .Site.Params.show_excerpts }}
+
+{{- range $Pages }}
+<article>
+    <header>
+        <!-- <h1>{{ .Title }}</h1> -->
+        {{ if .Date }}<time
+            datetime="{{ .Date.Format "2006-01-02T15:04:05Z07:00" }}">{{ .Date.Format "January 02, 2006" }}</time>{{ end }}
+    </header>
+    {{ .Summary }}
+    {{- if .Truncated }}
+    <div class="more"><a href="{{ .RelPermalink }}">read more</a></div>
+    {{- end }}
+</article>
+{{- end }}
+
+{{ else }}
+
+<article>
+    <table class="archive-table">
+        <tr>
+            <td class="date-cell">&nbsp;</td>
+            <td class="title-cell">
+                <p class="intro">
+                    {{.Site.Params.description}}
+                </p>
+            </td>
+        </tr>
+        {{- range $Pages }}
+        <tr>
+            <td class="date-cell">
+                {{ if .Date }}<time
+                    datetime="{{ .Date.Format "2006-01-02T15:04:05Z07:00" }}">{{ safeHTML (.Date.Format "02&nbsp;Jan&nbsp;2006") }}</time>{{ end }}
+            </td>
+            <td class="title-cell">
+                <a href="{{ .Permalink }}">{{ .Title }}</a>
+            </td>
+        </tr>
+        {{- end }}
+    </table>
+    {{ .Content }}
+</article>
+
+{{ end }}
+
+{{ end }}
