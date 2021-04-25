@@ -1,0 +1,33 @@
+name: hugo deploy
+
+on:
+    push:
+        branches:
+            - blog
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: checkout
+              uses: actions/checkout@v2
+              with:
+                  submodules: true
+
+            - name: setup hugo
+              uses: peaceiris/actions-hugo@v2
+              with:
+                  hugo-version: 'latest'
+                  extended: true
+
+            - name: build
+              run: hugo
+
+            - name: Deploy
+              uses: peaceiris/actions-gh-pages@v3
+              with:
+                  DEPLOY_KEY: ${{ secrets.GITHUB_TOKEN }}
+                  EXTERNAL_REPOSITORY: wuliuqii/wuliuqii.github.io
+                  PUBLISH_BRANCH: main
+                  PUBLISH_DIR: ./public
+                  COMMIT_MESSAGE: "auto commit from github actions"
