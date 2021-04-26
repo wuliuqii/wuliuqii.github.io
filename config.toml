@@ -2,7 +2,6 @@ baseURL = "https://wuliuqii.github.io/"
 languageCode = "zh-cn"
 title = "wuliuqi"
 theme = "journal"
-newContentEditor = "nvim"
 enableGitInfo = true
 
 [params]
