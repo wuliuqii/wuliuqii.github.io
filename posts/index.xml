@@ -6,7 +6,16 @@
     <description>Recent content in Posts on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Thu, 02 Apr 2020 10:34:27 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 26 Apr 2021 23:14:38 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Containers</title>
+      <link>https://wuliuqii.github.io/posts/containers/</link>
+      <pubDate>Mon, 26 Apr 2021 23:14:38 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/containers/</guid>
+      <description>Containers 开个新坑，讲讲容器。其实老早就想写 docker，因为自己的懒惰一直拖到现在才动笔。只要开始了，就不算晚！</description>
+    </item>
+    
     <item>
       <title>Ostep  Virtualization</title>
       <link>https://wuliuqii.github.io/posts/ostep-virtualization/</link>
