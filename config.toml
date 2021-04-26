@@ -1,8 +1,7 @@
 baseURL = "https://wuliuqii.github.io/"
-languageCode = "en-us"
-title = "Gallon"
-theme = "contrast"
-description = "Never settle, never will."
+languageCode = "zh-cn"
+title = "wuliuqi"
+theme = "journal"
 newContentEditor = "nvim"
 enableGitInfo = true
 
@@ -12,7 +11,7 @@ enableGitInfo = true
 [menu]
   [[menu.remote]]
   name = "Github"
-  url = "https://github.com/GallonHu"
+  url = "https://github.com/wuliuqii"
   identifier = "github"
   weight = 3.0
 
