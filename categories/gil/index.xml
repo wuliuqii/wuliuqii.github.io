@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>GIL on Gallon</title>
+    <title>GIL on wuliuqi</title>
     <link>https://wuliuqii.github.io/categories/gil/</link>
-    <description>Recent content in GIL on Gallon</description>
+    <description>Recent content in GIL on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
-    <language>en-us</language>
+    <language>zh-cn</language>
     <lastBuildDate>Mon, 30 Mar 2020 10:10:58 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/categories/gil/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Python GIL 的前世今生</title>
