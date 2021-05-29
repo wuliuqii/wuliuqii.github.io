@@ -5,6 +5,25 @@
     <link>https://wuliuqii.github.io/tags/</link>
     <description>Recent content in Tags on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
-    <language>zh-cn</language><atom:link href="https://wuliuqii.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
+    <language>zh-cn</language>
+    <lastBuildDate>Sun, 09 May 2021 20:30:53 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Golang</title>
+      <link>https://wuliuqii.github.io/tags/golang/</link>
+      <pubDate>Sun, 09 May 2021 20:30:53 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/tags/golang/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>MapReduce</title>
+      <link>https://wuliuqii.github.io/tags/mapreduce/</link>
+      <pubDate>Sun, 09 May 2021 20:30:53 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/tags/mapreduce/</guid>
+      <description></description>
+    </item>
+    
   </channel>
 </rss>

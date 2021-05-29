@@ -6,14 +6,19 @@
     <description>Recent content in Posts on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Mon, 26 Apr 2021 23:14:38 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sun, 09 May 2021 20:30:53 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Containers</title>
-      <link>https://wuliuqii.github.io/posts/containers/</link>
-      <pubDate>Mon, 26 Apr 2021 23:14:38 +0800</pubDate>
+      <title>6.824 lab1</title>
+      <link>https://wuliuqii.github.io/posts/6.824-lab1/</link>
+      <pubDate>Sun, 09 May 2021 20:30:53 +0800</pubDate>
       
-      <guid>https://wuliuqii.github.io/posts/containers/</guid>
-      <description>Containers 开个新坑，讲讲容器。其实老早就想写 docker，因为自己的懒惰一直拖到现在才动笔。只要开始了，就不算晚！</description>
+      <guid>https://wuliuqii.github.io/posts/6.824-lab1/</guid>
+      <description>6.824 Lab 1 课程主页: https://pdos.csail.mit.edu/6.824/schedule.html
+Lab1: https://pdos.csail.mit.edu/6.824/labs/lab-mr.html
+论文: http://static.googleusercontent.com/media/research.google.com/en//archive/mapreduce-osdi04.pdf
+要求 lab 1 主要是实现一个简易版 MapReduce 系统，主要有两部分：
+ worker：map、reduce 函数执行 ，文件读写处理 coordinate：任务调度 测试用例会有任务超时和 crash 的情况，需要有容错机制  整个流程大概可以简化成如下几步：
+ 启动 coordinate 进程，监听 worker 请求 启动单个或多个 worker 进程，worker 向 coordinate 请求任务 coordinate 处理 worker 的任务请求，步骤如下：  判断 map 任务是否全部完成 若未完成，挑选一个未完成的 map 任务，并将该任务状态设置为 assigned；否则判断 reduce 任务是否全部完成 若未完成，挑选一个未完成的 reduce 任务，并将该任务状态设置为 assigned   worker 收到任务后，根据任务类型执行对应的函数（map、reduce、wait） worker 完成任务后，向 coordinate 发送任务已完成 coordinate 将相应完成的任务的状态标记为 finished 重复 1-6 直至所有任务完成  worker worker 不断向 coordinate 请求任务，根据返回的任务进行处理，主体程序如下：</description>
     </item>
     
     <item>
