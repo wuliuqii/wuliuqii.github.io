@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Hugo 0.83.1" />
+  <meta name="generator" content="Hugo 0.88.1" />
 
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -66,7 +66,7 @@
 </ol>
 <h2 id="worker">worker</h2>
 <p>worker 不断向 coordinate 请求任务，根据返回的任务进行处理，主体程序如下：</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">Worker</span>(<span style="color:#a6e22e">mapf</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">string</span>, <span style="color:#66d9ef">string</span>) []<span style="color:#a6e22e">KeyValue</span>,
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">Worker</span>(<span style="color:#a6e22e">mapf</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">string</span>, <span style="color:#66d9ef">string</span>) []<span style="color:#a6e22e">KeyValue</span>,
 	<span style="color:#a6e22e">reducef</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">string</span>, []<span style="color:#66d9ef">string</span>) <span style="color:#66d9ef">string</span>) {
 	<span style="color:#66d9ef">for</span> {
 		<span style="color:#a6e22e">args</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">RequestArgs</span>{<span style="color:#a6e22e">MessageType</span>: <span style="color:#a6e22e">RequestTask</span>}
@@ -87,7 +87,7 @@
 	}
 }
 </code></pre></div><p>其中 Request 结构体如下：</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestArgs</span> <span style="color:#66d9ef">struct</span> {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestArgs</span> <span style="color:#66d9ef">struct</span> {
 	<span style="color:#a6e22e">MessageType</span> <span style="color:#66d9ef">int</span> <span style="color:#75715e">// RequestTask, FinishTask
 </span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Task</span>        <span style="color:#a6e22e">Task</span>
 }
@@ -104,7 +104,7 @@
 </ol>
 <h2 id="coordinate">coordinate</h2>
 <p>coordinate 需要处理所有 worker 的请求，分配 map 和 reduce 任务，并重新安排失败的任务。因此，我们的 coordinator 结构体如下</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Task</span> <span style="color:#66d9ef">struct</span> {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Task</span> <span style="color:#66d9ef">struct</span> {
 	<span style="color:#a6e22e">Index</span>       <span style="color:#66d9ef">int</span>
 	<span style="color:#a6e22e">Uid</span>         <span style="color:#66d9ef">string</span> <span style="color:#75715e">// for temp intermediate filename
 </span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Type</span>        <span style="color:#66d9ef">int</span> <span style="color:#75715e">// map, reduce, wait
@@ -133,12 +133,12 @@
 <li>timeout</li>
 </ol>
 <p>mac 系统默认没有 timeout 命令，需手动安装</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">brew install coreutils
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">brew install coreutils
 </code></pre></div><ol start="2">
 <li>wait -n</li>
 </ol>
 <p>mac 自动 bash 版本过低，需要升级 bash 版本</p>
-<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">brew install bash
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">brew install bash
 </code></pre></div><p>最后，附上运行结果</p>
 <p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/blog/image-20210530002821636.png" alt="image-20210530002821636"></p>
 
