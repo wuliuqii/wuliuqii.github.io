@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>logical operation on wuliuqi</title>
+    <link>https://wuliuqii.github.io/tags/logical-operation/</link>
+    <description>Recent content in logical operation on wuliuqi</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Thu, 28 Oct 2021 22:57:41 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/logical-operation/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>XOR</title>
+      <link>https://wuliuqii.github.io/posts/xor/</link>
+      <pubDate>Thu, 28 Oct 2021 22:57:41 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/xor/</guid>
+      <description>异或运算 最近刷 leetcode 碰到了好几道异或运算（XOR）的题目，本文主要介绍异或运算的含义和应用。
+什么是异或运算 异或运算，Exclusive or 或者 exclusive disjunction 是一个逻辑运算，当两个运算子不同（一个为真，另一个为假）的时候才为真。
+我们都知道或运算（OR）的运算子只要有一个为真，结果就为真，这样就会有两种情况：
+ 一个为真，另一个为假 两个都为真  这样 OR 的含义是不明确的，异或运算排除了第二种情况，异或这个名字也因此而来。
+性质 基本运算 我们假定 0 为 false，1 为 true，XOR（使用 ^ 表示）的运算真值表如下：
+   x y x ^ y     0 0 0   0 1 1   1 0 1   1 1 0    XOR 和 0 任何一个数和 0 XOR 的结果为自身
+x ^ 0 = x XOR 和自身 任何一个数和自身 XOR 的结果为 0</description>
+    </item>
+    
+  </channel>
+</rss>
