@@ -6,7 +6,25 @@
     <description>Recent content in Tags on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Thu, 28 Oct 2021 22:57:41 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 10 Jan 2022 23:37:13 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Golang</title>
+      <link>https://wuliuqii.github.io/tags/golang/</link>
+      <pubDate>Mon, 10 Jan 2022 23:37:13 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/tags/golang/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>Raft</title>
+      <link>https://wuliuqii.github.io/tags/raft/</link>
+      <pubDate>Mon, 10 Jan 2022 23:37:13 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/tags/raft/</guid>
+      <description></description>
+    </item>
+    
     <item>
       <title>logical operation</title>
       <link>https://wuliuqii.github.io/tags/logical-operation/</link>
@@ -22,15 +40,6 @@
       <pubDate>Sun, 24 Oct 2021 16:01:03 +0800</pubDate>
       
       <guid>https://wuliuqii.github.io/tags/contest/</guid>
-      <description></description>
-    </item>
-    
-    <item>
-      <title>Golang</title>
-      <link>https://wuliuqii.github.io/tags/golang/</link>
-      <pubDate>Sun, 24 Oct 2021 16:01:03 +0800</pubDate>
-      
-      <guid>https://wuliuqii.github.io/tags/golang/</guid>
       <description></description>
     </item>
     

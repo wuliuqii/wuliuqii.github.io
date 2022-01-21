@@ -6,7 +6,24 @@
     <description>Recent content in Golang on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Sun, 24 Oct 2021 16:01:03 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/golang/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 10 Jan 2022 23:37:13 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/golang/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>6.824 Lab2A</title>
+      <link>https://wuliuqii.github.io/posts/6.824-lab2a/</link>
+      <pubDate>Mon, 10 Jan 2022 23:37:13 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/6.824-lab2a/</guid>
+      <description>6.824 Lab 2A 课程主页: https://pdos.csail.mit.edu/6.824/schedule.html
+Lab2: https://pdos.csail.mit.edu/6.824/labs/lab-raft.html
+论文: https://pdos.csail.mit.edu/6.824/papers/raft-extended.pdf
+要求 raft 算法通过领导人机制，将一致性问题分解成了三个相对独立的子问题：
+ 领导选举 日志复制 安全性  Lab 2A 主要的任务就是实现 raft 的选主算法。
+raft 基础 raft 集群中的服务器节点都处于一下三个状态之一：领导人、跟随者和候选人。正常的情况中，系统中应该只有一个领导人，并且其他节点都是跟随者。跟随者被动响应来着领导人或候选人的请求。领导人和客户端交互。候选人在选举新领导人的时候出现。
+raft 把时间分割成任意长度的任期。任期用连续的整数标记。每一段任期从一次选举开始，一个或者多个候选人尝试成为领导人。如果一个候选人赢得选举，然后他就在接下来的任期内充当领导人的职责。在某些情况下，一次选举过程会造成选票的瓜分。在这种情况下，这一任期会以没有领导人结束；一个新的任期（和一次新的选举）会很快重新开始。raft 保证了在一个给定的任期内，最多只有一个领导人。
+实现 2A 中，只关注选举的过程，所以我们目前仅关注部分参数以及选举和心跳流程。
+type Raft struct { mu sync.Mutex // Lock to protect shared access to this peer&amp;#39;s state 	peers []*labrpc.ClientEnd // RPC end points of all peers 	persister *Persister // Object to hold this peer&amp;#39;s persisted state 	me int // this peer&amp;#39;s index into peers[] 	dead int32 // set by Kill()  // 2A.</description>
+    </item>
+    
     <item>
       <title>Weekly Contest 264</title>
       <link>https://wuliuqii.github.io/posts/weekly-contest-264/</link>
