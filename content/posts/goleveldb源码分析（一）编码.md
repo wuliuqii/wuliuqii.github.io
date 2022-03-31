@@ -11,7 +11,7 @@ draft: false
 研究一下基于Go语言的[Leveldb](https://github.com/syndtr/goleveldb)的源码，参考作者的配套[wiki](https://leveldb-handbook.readthedocs.io/zh/latest/rwopt.html)。
 
 Leveldb的整体流程如下图所示
-![image.png](C:\Users\18273\Desktop\Anytype.20220331.082447.73\files\image.png)    
+![image.png](https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/image.png)    
 
  ## 基础
 
