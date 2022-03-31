@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="Hugo 0.96.0" />
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="author" content="">
+  <meta property="og:url" content="https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%BA%8C%E7%BC%93%E5%AD%98/">
+
+  <title>Goleveldb源码分析（二）缓存 - wuliuqi</title>
+  <meta property="og:title" content="Goleveldb源码分析（二）缓存 - wuliuqi">
+  <meta property="og:type" content="article">
+  <meta name="description" content="">
+
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Code+Pro|Arvo:400,700">
+  <link rel="stylesheet" href="/css/highlight.css">
+  <link rel="stylesheet" href="/css/journal.css">
+  <link href="/index.xml" rel="alternate" type="application/rss+xml" title="wuliuqi">
+
+</head>
+
+<body>
+  <div class="container">
+
+    <nav class="site-nav">
+      <a href="https://wuliuqii.github.io/">Index</a>
+    </nav>
+
+
+<article class="post">
+    <header class="post-header">
+        <h1 class="post-title">Goleveldb源码分析（二）缓存</h1>
+        <time class="post-date"
+            datetime="2022-03-31 08:30:43 &#43;0800">31 Mar 2022</time>
+    </header>
+
+    <h1 id="缓存">缓存</h1>
+<p>缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：</p>
+<ul>
+<li>已打开的sstable文件对象和相关元数据；</li>
+<li>sstable中的dataBlock的内容。</li>
+</ul>
+<h2 id="整体结构">整体结构</h2>
+<p>Leveldb中使用的Cache是一种LRUcache，其结构由两部分内容组成：</p>
+<ul>
+<li>Hash table：用来存储数据；</li>
+<li>LRU：用来维护数据项的新旧信息。
+<img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/v_image.png" alt="image.png"></li>
+</ul>
+<p>缓存系统：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// 缓存
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Cache</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">mu</span>     <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">RWMutex</span>   <span style="color:#75715e">// 读写锁
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">mHead</span>  <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span> <span style="color:#75715e">// *mNode 指向哈希表
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">nodes</span>  <span style="color:#66d9ef">int32</span>          <span style="color:#75715e">// 哈希表中的节点个数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">size</span>   <span style="color:#66d9ef">int32</span>          <span style="color:#75715e">// 哈希表大小
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">cacher</span> <span style="color:#a6e22e">Cacher</span>         <span style="color:#75715e">// 缓存策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">closed</span> <span style="color:#66d9ef">bool</span>           <span style="color:#75715e">// 是否关闭
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p>缓存策略：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// 缓存策略接口，并发安全
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 以下的缓存皆指缓存策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Cacher</span> <span style="color:#66d9ef">interface</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 缓存容量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Capacity</span>() <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 设置缓存容量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">SetCapacity</span>(<span style="color:#a6e22e">capacity</span> <span style="color:#66d9ef">int</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 添加节点的到缓存中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Promote</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 将节点从缓存中删除，并尝试将其从哈希表中删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Ban</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 将节点从缓存中删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Evict</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 将所有给定的命名空间的节点从缓存中删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">EvictNS</span>(<span style="color:#a6e22e">ns</span> <span style="color:#66d9ef">uint64</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 将缓存中的所有节点删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">EvictAll</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 关闭缓存
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Close</span>() <span style="color:#66d9ef">error</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h2 id="实现">实现</h2>
+<p>再依次看一下上述各个结构实现与<strong>核心</strong>方法，以及如何组合在一起对外提供缓存的功能。</p>
+<h3 id="node">Node</h3>
+<p>Node是缓存系统中存放键值对数据的对象，它是线程安全的，通过引用计数来判断是否需要真正的删除。它的实现比较简单，这里就不贴代码了。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// Node is a &#39;cache node&#39;.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Node</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Cache</span> <span style="color:#75715e">// 所属的Cache
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">hash</span>    <span style="color:#66d9ef">uint32</span> <span style="color:#75715e">// 哈希值
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">ns</span>, <span style="color:#a6e22e">key</span> <span style="color:#66d9ef">uint64</span> <span style="color:#75715e">// 命名空间，键
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">mu</span>    <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">Mutex</span> <span style="color:#75715e">// 读写锁，可能被多线程同时使用
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">size</span>  <span style="color:#66d9ef">int</span>        <span style="color:#75715e">// 大小
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">value</span> <span style="color:#a6e22e">Value</span>      <span style="color:#75715e">// 值
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">ref</span>   <span style="color:#66d9ef">int32</span>    <span style="color:#75715e">// 引用计数，为0才能真正删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">onDel</span> []<span style="color:#66d9ef">func</span>() <span style="color:#75715e">// 删除时的回调函数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">CacheData</span> <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span> <span style="color:#75715e">// 指向缓存的lruNode
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 需要caller持锁
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>) <span style="color:#a6e22e">unref</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">ref</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 引用计数为0才删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">r</span>.delete(<span style="color:#a6e22e">n</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>) <span style="color:#a6e22e">unrefLocked</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">ref</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">RLock</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">closed</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">r</span>.delete(<span style="color:#a6e22e">n</span>)
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">RUnlock</span>()
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="handle">Handle</h3>
+<p>Handle是指向Node的一个指针，主要就是对外提供Release方法，用来释放当前引用。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Handle</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">n</span> <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span> <span style="color:#75715e">// *Node
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 返回当前引用的节点的值
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">h</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Handle</span>) <span style="color:#a6e22e">Value</span>() <span style="color:#a6e22e">Value</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 原子的解引用，得到指向的Node
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">n</span>))
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">value</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">h</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Handle</span>) <span style="color:#a6e22e">Release</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">nPtr</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">n</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">nPtr</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">CompareAndSwapPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">n</span>, <span style="color:#a6e22e">nPtr</span>, <span style="color:#66d9ef">nil</span>) {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>)(<span style="color:#a6e22e">nPtr</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">unrefLocked</span>()
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="lru">lru</h3>
+<p>lruNode就是一个双向循环链表，提供insert和remove两个方法，双向链表的正常插入删除操作。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// 双向循环链表
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">lruNode</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">n</span>   <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>   <span style="color:#75715e">// 指向哈希表总的节点
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">h</span>   <span style="color:#f92672">*</span><span style="color:#a6e22e">Handle</span> <span style="color:#75715e">// Node的一个copy
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">ban</span> <span style="color:#66d9ef">bool</span>    <span style="color:#75715e">// 是否被删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">next</span>, <span style="color:#a6e22e">prev</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">lruNode</span> <span style="color:#75715e">// 前后lruNode节点
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">lruNode</span>) <span style="color:#a6e22e">insert</span>(<span style="color:#a6e22e">at</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">lruNode</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">x</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">at</span>.<span style="color:#a6e22e">next</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">at</span>.<span style="color:#a6e22e">next</span> = <span style="color:#a6e22e">n</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">prev</span> = <span style="color:#a6e22e">at</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">next</span> = <span style="color:#a6e22e">x</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">x</span>.<span style="color:#a6e22e">prev</span> = <span style="color:#a6e22e">n</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">lruNode</span>) <span style="color:#a6e22e">remove</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">prev</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">prev</span>.<span style="color:#a6e22e">next</span> = <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">next</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">next</span>.<span style="color:#a6e22e">prev</span> = <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">prev</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">prev</span> = <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">next</span> = <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>	} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>		panic(<span style="color:#e6db74">&#34;BUG: removing removed node&#34;</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>lru实现了Cacher接口，这里只挑几个比较重要方法详细解释。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// lru缓存策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">lru</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">mu</span>       <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">Mutex</span> <span style="color:#75715e">// 读写锁，需要保证并发安全
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">capacity</span> <span style="color:#66d9ef">int</span>        <span style="color:#75715e">// 容量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">used</span>     <span style="color:#66d9ef">int</span>        <span style="color:#75715e">// lru的大小
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">recent</span>   <span style="color:#a6e22e">lruNode</span>    <span style="color:#75715e">// 最近的lruNode，双向循环链表头节点
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 设置容量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">lru</span>) <span style="color:#a6e22e">SetCapacity</span>(<span style="color:#a6e22e">capacity</span> <span style="color:#66d9ef">int</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">evicted</span> []<span style="color:#f92672">*</span><span style="color:#a6e22e">lruNode</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Lock</span>()
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">capacity</span> = <span style="color:#a6e22e">capacity</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">used</span> &gt; <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">capacity</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 当前的lruNode超过容量
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">// 删除最旧的节点
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">rn</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">recent</span>.<span style="color:#a6e22e">prev</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rn</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>			panic(<span style="color:#e6db74">&#34;BUG: invalid LRU used or capacity counter&#34;</span>)
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">remove</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">CacheData</span> = <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">used</span> <span style="color:#f92672">-=</span> <span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Size</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">evicted</span> = append(<span style="color:#a6e22e">evicted</span>, <span style="color:#a6e22e">rn</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">rn</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">evicted</span> {
+</span></span><span style="display:flex;"><span>		
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">Release</span>()
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 添加Node到lru
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">lru</span>) <span style="color:#a6e22e">Promote</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">evicted</span> []<span style="color:#f92672">*</span><span style="color:#a6e22e">lruNode</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Lock</span>()
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">CacheData</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 当前Node不在lru中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Size</span>() <span style="color:#f92672">&lt;=</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">capacity</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 还有容量，将Node添加到头部
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">rn</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">lruNode</span>{<span style="color:#a6e22e">n</span>: <span style="color:#a6e22e">n</span>, <span style="color:#a6e22e">h</span>: <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">GetHandle</span>()}
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">insert</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">recent</span>)
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">CacheData</span> = <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">rn</span>)
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">used</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Size</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">used</span> &gt; <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">capacity</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// 添加后超出容量，删除最旧的lruNode
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>				<span style="color:#a6e22e">rn</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">recent</span>.<span style="color:#a6e22e">prev</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rn</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>					panic(<span style="color:#e6db74">&#34;BUG: invalid LRU used or capacity counter&#34;</span>)
+</span></span><span style="display:flex;"><span>				}
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">remove</span>()
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">CacheData</span> = <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">used</span> <span style="color:#f92672">-=</span> <span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Size</span>()
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">evicted</span> = append(<span style="color:#a6e22e">evicted</span>, <span style="color:#a6e22e">rn</span>)
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 当前Node在lru中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">rn</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">lruNode</span>)(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">CacheData</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">ban</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 将当前Node移至头节点
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">remove</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">insert</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">recent</span>)
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">rn</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">evicted</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 通过Handle.Release 释放当前Node的引用
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">Release</span>()
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 删除Node
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">lru</span>) <span style="color:#a6e22e">Ban</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Lock</span>()
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">CacheData</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 不在lru链表中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">CacheData</span> = <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">lruNode</span>{<span style="color:#a6e22e">n</span>: <span style="color:#a6e22e">n</span>, <span style="color:#a6e22e">ban</span>: <span style="color:#66d9ef">true</span>})
+</span></span><span style="display:flex;"><span>	} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">rn</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">lruNode</span>)(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">CacheData</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">ban</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 将指向Node的lruNode从lru链表中删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#75715e">// 将ban置为true，表示已删除
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">remove</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">ban</span> = <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">used</span> <span style="color:#f92672">-=</span> <span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">Size</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">Release</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">rn</span>.<span style="color:#a6e22e">h</span> = <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="mbucket">mBucket</h3>
+<p>mBucket即为哈希桶，最小的封锁粒度。核心方法为get和delete，添加通过get实现。添加或删除Node后需要判断当前哈希表是否需要进行收缩或者扩张。   <img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/y_image.png" alt="image.png">    当发生哈希表扩张的条件为：</p>
+<ol>
+<li>整个Cache中，Node的个数超过预定的阈值（默认初始状态下哈希桶的个数为16个，每个桶中可存储32个数据项，即总量的阈值为哈希桶个数乘以每个桶的容量上限）；</li>
+<li>当Cache中出现了数据不平衡的情况。当某些桶的数据量超过了32个数据，即被视作数据发生散列不平衡。当这种不平衡累积值超过预定的阈值（128）个时，就需要进行扩张。</li>
+</ol>
+<p>扩张的过程为：</p>
+<ol>
+<li>计算新哈希表的哈希桶个数（扩大一倍）；</li>
+<li>创建一个空的哈希表，并将旧的哈希表（主要为所有哈希桶构成的数组）转换成一个过渡期的哈希表，表中的每个哈希桶都被<strong>冻结</strong>；</li>
+<li>后台利用过渡期哈希表中的被冻结的哈希桶信息对新的哈希表进行内容构建。</li>
+</ol>
+<p>收缩的条件为：哈希表中Node的个数少于哈希桶的一半。<br>
+收缩的过程与扩张类似，只不过新表中桶的个数为旧表的一半。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// 哈希桶
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">mBucket</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">mu</span>     <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">Mutex</span> <span style="color:#75715e">// 读写锁，哈希表扩张的过程中，最小的封锁粒度为桶级别
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">node</span>   []<span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>    <span style="color:#75715e">// 节点指针数组
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">frozen</span> <span style="color:#66d9ef">bool</span>       <span style="color:#75715e">// 是否冻结，用于桶中数据转移
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 查找Node，也可以通过将noset置为false来添加Node
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 返回值：是否进行查找操作，是否新增Node，对应的Node
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 添加后需要判断当前哈希表是否需要进行扩张
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">b</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>) <span style="color:#a6e22e">get</span>(<span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Cache</span>, <span style="color:#a6e22e">h</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">mNode</span>, <span style="color:#a6e22e">hash</span> <span style="color:#66d9ef">uint32</span>, <span style="color:#a6e22e">ns</span>, <span style="color:#a6e22e">key</span> <span style="color:#66d9ef">uint64</span>, <span style="color:#a6e22e">noset</span> <span style="color:#66d9ef">bool</span>) (<span style="color:#a6e22e">done</span>, <span style="color:#a6e22e">added</span> <span style="color:#66d9ef">bool</span>, <span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Lock</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">frozen</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 如果当前桶被冻结了，不操作
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Scan the node.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 遍历当前桶，查找对应的Node
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">hash</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">hash</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">ns</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">ns</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">key</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">key</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 在当前桶中，引用计数+1，并将其返回
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">ref</span>, <span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>, <span style="color:#66d9ef">false</span>, <span style="color:#a6e22e">n</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Get only.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">noset</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 不在当前桶中，noset为true，不新建Node，返回
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>, <span style="color:#66d9ef">false</span>, <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Create node.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 新建Node，并放入当前桶中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">n</span> = <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">Node</span>{
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">r</span>:    <span style="color:#a6e22e">r</span>,
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">hash</span>: <span style="color:#a6e22e">hash</span>,
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">ns</span>:   <span style="color:#a6e22e">ns</span>,
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">key</span>:  <span style="color:#a6e22e">key</span>,
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">ref</span>:  <span style="color:#ae81ff">1</span>,
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Add node to bucket.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span> = append(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span>, <span style="color:#a6e22e">n</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">bLen</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Update counter.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// Cache中的节点数是是否超出阈值
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">grow</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">nodes</span>, <span style="color:#ae81ff">1</span>) <span style="color:#f92672">&gt;=</span> <span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">growThreshold</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">bLen</span> &gt; <span style="color:#a6e22e">mOverflowThreshold</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 当前桶Node个数超出32个，为不平衡
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">// Cache中不平衡桶的个数超出128个，或者Node数超出阈值，需要扩张
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">grow</span> = <span style="color:#a6e22e">grow</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">overflow</span>, <span style="color:#ae81ff">1</span>) <span style="color:#f92672">&gt;=</span> <span style="color:#a6e22e">mOverflowGrowThreshold</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Grow.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">grow</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">CompareAndSwapInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">resizeInProgess</span>, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">1</span>) {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 扩张，将resizeInProgess标志位设为1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">// 新桶的数量扩大一倍
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">nhLen</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">buckets</span>) <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">nh</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">mNode</span>{
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">buckets</span>:         make([]<span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>, <span style="color:#a6e22e">nhLen</span>),
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">mask</span>:            uint32(<span style="color:#a6e22e">nhLen</span>) <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>,
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">pred</span>:            <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">h</span>), <span style="color:#75715e">// 新桶的pred指向旧桶
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">growThreshold</span>:   int32(<span style="color:#a6e22e">nhLen</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">mOverflowThreshold</span>),
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">shrinkThreshold</span>: int32(<span style="color:#a6e22e">nhLen</span> <span style="color:#f92672">&gt;&gt;</span> <span style="color:#ae81ff">1</span>), <span style="color:#75715e">// 哈希表中Node的个数少于哈希桶的个数时
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Cache的mHead指针指向新表
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">CompareAndSwapPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mHead</span>, <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">h</span>), <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">nh</span>))
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>			panic(<span style="color:#e6db74">&#34;BUG: failed swapping head&#34;</span>)
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 后台进行哈希表的构建（数据转移）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">go</span> <span style="color:#a6e22e">nh</span>.<span style="color:#a6e22e">initBuckets</span>()
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>, <span style="color:#66d9ef">true</span>, <span style="color:#a6e22e">n</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 删除Node
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 删除后需要判断当前哈希表是否需要收缩
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">b</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>) delete(<span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Cache</span>, <span style="color:#a6e22e">h</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">mNode</span>, <span style="color:#a6e22e">hash</span> <span style="color:#66d9ef">uint32</span>, <span style="color:#a6e22e">ns</span>, <span style="color:#a6e22e">key</span> <span style="color:#66d9ef">uint64</span>) (<span style="color:#a6e22e">done</span>, <span style="color:#a6e22e">deleted</span> <span style="color:#66d9ef">bool</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Lock</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">frozen</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Scan the node.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">var</span> (
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span>    <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">bLen</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">n</span> = <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span>[<span style="color:#a6e22e">i</span>]
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">ns</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">ns</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">key</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">key</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">ref</span>) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">deleted</span> = <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// Call releaser.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>				<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">value</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">r</span>, <span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">value</span>.(<span style="color:#a6e22e">util</span>.<span style="color:#a6e22e">Releaser</span>); <span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>						<span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">Release</span>()
+</span></span><span style="display:flex;"><span>					}
+</span></span><span style="display:flex;"><span>					<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">value</span> = <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>				}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>				<span style="color:#75715e">// Remove node from bucket.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>				<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span> = append(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span>[:<span style="color:#a6e22e">i</span>], <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>:]<span style="color:#f92672">...</span>)
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">bLen</span> = len(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">node</span>)
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">mu</span>.<span style="color:#a6e22e">Unlock</span>()
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">deleted</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Call OnDel.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">f</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">onDel</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">f</span>()
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Update counter.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">// 收缩的条件： 哈希表中数据项的个数少于哈希桶的个数时
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">size</span>, int32(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">size</span>)<span style="color:#f92672">*-</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">shrink</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">nodes</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>) &lt; <span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">shrinkThreshold</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">bLen</span> <span style="color:#f92672">&gt;=</span> <span style="color:#a6e22e">mOverflowThreshold</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 当前桶不平衡，删除了一个Node，所以需要将overflow的Node少了一个
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">overflow</span>, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Shrink.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">shrink</span> <span style="color:#f92672">&amp;&amp;</span> len(<span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">buckets</span>) &gt; <span style="color:#a6e22e">mInitialSize</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">CompareAndSwapInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">resizeInProgess</span>, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">1</span>) {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 新桶数量为旧桶的一半
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">nhLen</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">buckets</span>) <span style="color:#f92672">&gt;&gt;</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">nh</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">mNode</span>{
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">buckets</span>:         make([]<span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>, <span style="color:#a6e22e">nhLen</span>),
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">mask</span>:            uint32(<span style="color:#a6e22e">nhLen</span>) <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>,
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">pred</span>:            <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">h</span>),
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">growThreshold</span>:   int32(<span style="color:#a6e22e">nhLen</span> <span style="color:#f92672">*</span> <span style="color:#a6e22e">mOverflowThreshold</span>),
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">shrinkThreshold</span>: int32(<span style="color:#a6e22e">nhLen</span> <span style="color:#f92672">&gt;&gt;</span> <span style="color:#ae81ff">1</span>),
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">ok</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">CompareAndSwapPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mHead</span>, <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">h</span>), <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">nh</span>))
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">ok</span> {
+</span></span><span style="display:flex;"><span>				panic(<span style="color:#e6db74">&#34;BUG: failed swapping head&#34;</span>)
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 后台构建
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#66d9ef">go</span> <span style="color:#a6e22e">nh</span>.<span style="color:#a6e22e">initBuckets</span>()
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>, <span style="color:#a6e22e">deleted</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="mhead">mHead</h3>
+<p>mHead即为哈希表，主要关注initBucket，看如果构建哈希表的。</p>
+<p>当哈希表扩张时，构建一个新的哈希桶其实就是将一个旧哈希桶中的数据拆分成两个新的哈希桶。</p>
+<p>拆分的规则很简单：</p>
+<ol>
+<li>利用散列函数对Node的key值进行计算；</li>
+<li>将第1步得到的结果取哈希桶个数的余，得到哈希桶的ID；</li>
+</ol>
+<p>因此拆分时仅需要将Node的key的散列值对新的哈希桶个数取余即可。</p>
+<p>收缩的过程也类似，将两个旧桶合并成一个。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// 哈希表
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">mNode</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">buckets</span>         []<span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span> <span style="color:#75715e">// []*mBucket 指向表中所有桶的指针数组
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">mask</span>            <span style="color:#66d9ef">uint32</span>           <span style="color:#75715e">// 掩码，用于快速找到对应的桶
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">pred</span>            <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>   <span style="color:#75715e">// *mNode 指向旧桶的指针，用于扩张或收缩
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">resizeInProgess</span> <span style="color:#66d9ef">int32</span>            <span style="color:#75715e">// 是否正在扩张或收缩
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">overflow</span>        <span style="color:#66d9ef">int32</span> <span style="color:#75715e">// 不平衡Node个数，所有的桶中超过32个Node的个数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">growThreshold</span>   <span style="color:#66d9ef">int32</span> <span style="color:#75715e">// 扩张阈值，表中Node个数超过则进行扩张
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">shrinkThreshold</span> <span style="color:#66d9ef">int32</span> <span style="color:#75715e">// 收缩阈值，表中Node个数少于则进行收缩
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 构建哈希桶
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">mNode</span>) <span style="color:#a6e22e">initBucket</span>(<span style="color:#a6e22e">i</span> <span style="color:#66d9ef">uint32</span>) <span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">b</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">buckets</span>[<span style="color:#a6e22e">i</span>])); <span style="color:#a6e22e">b</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 当前桶以及被构建过了，直接返回
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">b</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">p</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">mNode</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">pred</span>))
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">p</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">node</span> []<span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">mask</span> &gt; <span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">mask</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Grow.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#75715e">// 需要进行扩张
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#75715e">// i&amp;p.mask，取余获取旧表对应桶的索引
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">pb</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">buckets</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">&amp;</span><span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">mask</span>]))
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">pb</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">pb</span> = <span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">initBucket</span>(<span style="color:#a6e22e">i</span> <span style="color:#f92672">&amp;</span> <span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">mask</span>)
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 将旧桶冻结
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">m</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">pb</span>.<span style="color:#a6e22e">freeze</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Split nodes.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">x</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">m</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">x</span>.<span style="color:#a6e22e">hash</span><span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">mask</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">i</span> {
+</span></span><span style="display:flex;"><span>					<span style="color:#75715e">// 重新散列到新桶中
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>					<span style="color:#a6e22e">node</span> = append(<span style="color:#a6e22e">node</span>, <span style="color:#a6e22e">x</span>)
+</span></span><span style="display:flex;"><span>				}
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>		} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Shrink.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">pb0</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">buckets</span>[<span style="color:#a6e22e">i</span>]))
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">pb0</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">pb0</span> = <span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">initBucket</span>(<span style="color:#a6e22e">i</span>)
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">pb1</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">buckets</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span>uint32(len(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">buckets</span>))]))
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">pb1</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">pb1</span> = <span style="color:#a6e22e">p</span>.<span style="color:#a6e22e">initBucket</span>(<span style="color:#a6e22e">i</span> <span style="color:#f92672">+</span> uint32(len(<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">buckets</span>)))
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">m0</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">pb0</span>.<span style="color:#a6e22e">freeze</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">m1</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">pb1</span>.<span style="color:#a6e22e">freeze</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Merge nodes.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">node</span> = make([]<span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>, <span style="color:#ae81ff">0</span>, len(<span style="color:#a6e22e">m0</span>)<span style="color:#f92672">+</span>len(<span style="color:#a6e22e">m1</span>))
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">node</span> = append(<span style="color:#a6e22e">node</span>, <span style="color:#a6e22e">m0</span><span style="color:#f92672">...</span>)
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">node</span> = append(<span style="color:#a6e22e">node</span>, <span style="color:#a6e22e">m1</span><span style="color:#f92672">...</span>)
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">b</span> <span style="color:#f92672">:=</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">mBucket</span>{<span style="color:#a6e22e">node</span>: <span style="color:#a6e22e">node</span>}
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">CompareAndSwapPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">buckets</span>[<span style="color:#a6e22e">i</span>], <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">unsafe</span>.<span style="color:#a6e22e">Pointer</span>(<span style="color:#a6e22e">b</span>)) {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> len(<span style="color:#a6e22e">node</span>) &gt; <span style="color:#a6e22e">mOverflowThreshold</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">AddInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">overflow</span>, int32(len(<span style="color:#a6e22e">node</span>)<span style="color:#f92672">-</span><span style="color:#a6e22e">mOverflowThreshold</span>))
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">b</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">buckets</span>[<span style="color:#a6e22e">i</span>]))
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="cache">Cache</h3>
+<p>Cache即为缓存系统，作用前文已经介绍了，这里不再赘述。这里要着重说一下getBucket，前面介绍哈希表扩张和收缩的时候提过，最小的封锁粒度为哈希桶级别，<strong>构建新表的过程中，哈希表并不会拒绝服务，所有的操作仍然可以进行</strong>。</p>
+<p>当有新的读写请求发生时，若被散列之后得到的哈希桶仍然未构建完成，则<strong>主动</strong>进行构建，并将构建后的哈希桶填入新的哈希表中。后台进程构建到该桶时，发现已经被构建了，则无需重复构建。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">r</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Cache</span>) <span style="color:#a6e22e">getBucket</span>(<span style="color:#a6e22e">hash</span> <span style="color:#66d9ef">uint32</span>) (<span style="color:#f92672">*</span><span style="color:#a6e22e">mNode</span>, <span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">h</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">mNode</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">r</span>.<span style="color:#a6e22e">mHead</span>))
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">hash</span> <span style="color:#f92672">&amp;</span> <span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">mask</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span> <span style="color:#f92672">:=</span> (<span style="color:#f92672">*</span><span style="color:#a6e22e">mBucket</span>)(<span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">LoadPointer</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">buckets</span>[<span style="color:#a6e22e">i</span>]))
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">b</span> <span style="color:#f92672">==</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 主动进行哈希桶构建
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">b</span> = <span style="color:#a6e22e">h</span>.<span style="color:#a6e22e">initBucket</span>(<span style="color:#a6e22e">i</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">h</span>, <span style="color:#a6e22e">b</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Cache对Leveldb提供两个主要的接口，Get和Delete，用来添加和删除数据，当然还有一些其他比较简单的接口，这里也不逐行分析，比较简单。</p>
+<p>至此，我们对Leveldb的缓存系统的分析已经完成了，完整的注释代码在[<a href="https://github.com/wuliuqii/goleveldb-annotation/tree/master/leveldb/cache">goleveldb-annotation</a>。</p>
+
+
+</article>
+
+<footer class="site-footer">
+    <span itemscope itemtype="http://schema.org/Person">
+        <link itemprop="url" href="https://wuliuqii.github.io/">
+        <span itemprop="name"></span>
+
+        <br>
+
+        
+
+        
+
+        
+    </span>
+
+
+    <br><br>
+
+    <div style="text-align:center">
+        <small>
+            <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img
+                    alt="Creative Commons License" style="border-width:0"
+                    src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />Content of this site is
+            licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons
+                Attribution-NonCommercial-ShareAlike 4.0 International License</a>.
+        </small>
+    </div>
+
+    
+</footer>
+</div>
+
+<script src="/js/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+
+</body>
+
+</html>
+
+<script type="text/javascript" async
+    src="https://cdn.bootcss.com/mathjax/2.7.3/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+        MathJax.Hub.Config({
+            tex2jax: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\[\[', '\]\]']],
+                processEscapes: true,
+                processEnvironments: true,
+                skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+                TeX: {
+                    equationNumbers: {autoNumber: "AMS"},
+                    extensions: ["AMSmath.js", "AMSsymbols.js"]
+                }
+            }
+        });
+
+        MathJax.Hub.Queue(function () {
+            
+            
+            
+            var all = MathJax.Hub.getAllJax(), i;
+            for (i = 0; i < all.length; i += 1) {
+                all[i].SourceElement().parentNode.className += ' has-jax';
+            }
+        });
+    </script>
+
+<style>
+    code.has-jax {
+        font: inherit;
+        font-size: 100%;
+        background: #fbfbfb;
+        border: inherit;
+        color: #303030;
+    }
+</style>
+

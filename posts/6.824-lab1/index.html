@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Hugo 0.92.0" />
+  <meta name="generator" content="Hugo 0.96.0" />
 
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -66,37 +66,37 @@
 </ol>
 <h2 id="worker">worker</h2>
 <p>worker 不断向 coordinate 请求任务，根据返回的任务进行处理，主体程序如下：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">Worker</span>(<span style="color:#a6e22e">mapf</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">string</span>, <span style="color:#66d9ef">string</span>) []<span style="color:#a6e22e">KeyValue</span>,
-	<span style="color:#a6e22e">reducef</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">string</span>, []<span style="color:#66d9ef">string</span>) <span style="color:#66d9ef">string</span>) {
-	<span style="color:#66d9ef">for</span> {
-		<span style="color:#a6e22e">args</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">RequestArgs</span>{<span style="color:#a6e22e">MessageType</span>: <span style="color:#a6e22e">RequestTask</span>}
-		<span style="color:#a6e22e">reply</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">RequestReply</span>{}
-		<span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">call</span>(<span style="color:#e6db74">&#34;Coordinator.WorkerCallHandler&#34;</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">args</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">reply</span>)
-		<span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">err</span> {
-			<span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Fatalf</span>(<span style="color:#e6db74">&#34;rpc call err: %v&#34;</span>, <span style="color:#a6e22e">err</span>)
-		}
-
-		<span style="color:#66d9ef">switch</span> <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Task</span>.<span style="color:#a6e22e">Type</span> {
-		<span style="color:#66d9ef">case</span> <span style="color:#a6e22e">Map</span>:
-			<span style="color:#a6e22e">doMap</span>()
-		<span style="color:#66d9ef">case</span> <span style="color:#a6e22e">Reduce</span>:
-			<span style="color:#a6e22e">doReduce</span>()
-		<span style="color:#66d9ef">case</span> <span style="color:#a6e22e">Wait</span>:
-			<span style="color:#a6e22e">doWait</span>()
-		}
-	}
-}
-</code></pre></div><p>其中 Request 结构体如下：</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestArgs</span> <span style="color:#66d9ef">struct</span> {
-	<span style="color:#a6e22e">MessageType</span> <span style="color:#66d9ef">int</span> <span style="color:#75715e">// RequestTask, FinishTask
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Task</span>        <span style="color:#a6e22e">Task</span>
-}
-
-<span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestReply</span> <span style="color:#66d9ef">struct</span> {
-	<span style="color:#a6e22e">Task</span>    <span style="color:#a6e22e">Task</span>
-	<span style="color:#a6e22e">NReduce</span> <span style="color:#66d9ef">int</span>
-}
-</code></pre></div><p>这里有几个点需要注意：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">Worker</span>(<span style="color:#a6e22e">mapf</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">string</span>, <span style="color:#66d9ef">string</span>) []<span style="color:#a6e22e">KeyValue</span>,
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">reducef</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">string</span>, []<span style="color:#66d9ef">string</span>) <span style="color:#66d9ef">string</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">args</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">RequestArgs</span>{<span style="color:#a6e22e">MessageType</span>: <span style="color:#a6e22e">RequestTask</span>}
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">reply</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">RequestReply</span>{}
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">call</span>(<span style="color:#e6db74">&#34;Coordinator.WorkerCallHandler&#34;</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">args</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">reply</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> !<span style="color:#a6e22e">err</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">log</span>.<span style="color:#a6e22e">Fatalf</span>(<span style="color:#e6db74">&#34;rpc call err: %v&#34;</span>, <span style="color:#a6e22e">err</span>)
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">switch</span> <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Task</span>.<span style="color:#a6e22e">Type</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">case</span> <span style="color:#a6e22e">Map</span>:
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">doMap</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">case</span> <span style="color:#a6e22e">Reduce</span>:
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">doReduce</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">case</span> <span style="color:#a6e22e">Wait</span>:
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">doWait</span>()
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>其中 Request 结构体如下：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestArgs</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">MessageType</span> <span style="color:#66d9ef">int</span> <span style="color:#75715e">// RequestTask, FinishTask
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Task</span>        <span style="color:#a6e22e">Task</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestReply</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Task</span>    <span style="color:#a6e22e">Task</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">NReduce</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>这里有几个点需要注意：</p>
 <ol>
 <li>worker 读写文件都是在本地</li>
 <li>map 处理完的中间结果需要用文件保存在本地</li>
@@ -104,23 +104,23 @@
 </ol>
 <h2 id="coordinate">coordinate</h2>
 <p>coordinate 需要处理所有 worker 的请求，分配 map 和 reduce 任务，并重新安排失败的任务。因此，我们的 coordinator 结构体如下</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Task</span> <span style="color:#66d9ef">struct</span> {
-	<span style="color:#a6e22e">Index</span>       <span style="color:#66d9ef">int</span>
-	<span style="color:#a6e22e">Uid</span>         <span style="color:#66d9ef">string</span> <span style="color:#75715e">// for temp intermediate filename
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Type</span>        <span style="color:#66d9ef">int</span> <span style="color:#75715e">// map, reduce, wait
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Status</span>      <span style="color:#66d9ef">int</span> <span style="color:#75715e">// unassigned, assigned, finished
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">MapFile</span>     <span style="color:#66d9ef">string</span>
-	<span style="color:#a6e22e">ReduceFiles</span> []<span style="color:#66d9ef">string</span>
-}
-
-<span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Coordinator</span> <span style="color:#66d9ef">struct</span> {
-	<span style="color:#a6e22e">mapTasks</span>          []<span style="color:#f92672">*</span><span style="color:#a6e22e">Task</span>
-	<span style="color:#a6e22e">reduceTasks</span>       []<span style="color:#f92672">*</span><span style="color:#a6e22e">Task</span>
-	<span style="color:#a6e22e">mapFinishedCnt</span>    <span style="color:#66d9ef">int</span>
-	<span style="color:#a6e22e">reduceFinishedCnt</span> <span style="color:#66d9ef">int</span>
-	<span style="color:#a6e22e">rw</span>                <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">RWMutex</span>
-}
-</code></pre></div><p>在实现的时候，这里做了一些简化：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Task</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Index</span>       <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Uid</span>         <span style="color:#66d9ef">string</span> <span style="color:#75715e">// for temp intermediate filename
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Type</span>        <span style="color:#66d9ef">int</span> <span style="color:#75715e">// map, reduce, wait
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Status</span>      <span style="color:#66d9ef">int</span> <span style="color:#75715e">// unassigned, assigned, finished
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">MapFile</span>     <span style="color:#66d9ef">string</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">ReduceFiles</span> []<span style="color:#66d9ef">string</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Coordinator</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">mapTasks</span>          []<span style="color:#f92672">*</span><span style="color:#a6e22e">Task</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">reduceTasks</span>       []<span style="color:#f92672">*</span><span style="color:#a6e22e">Task</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">mapFinishedCnt</span>    <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">reduceFinishedCnt</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">rw</span>                <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">RWMutex</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>在实现的时候，这里做了一些简化：</p>
 <ol>
 <li>使用数组保存 map 或 reduce 任务，这样的处理，便于后续的任务的处理</li>
 <li>coordinate 初始化后，mapTasks 和 reduceTasks 数组长度固定，任务分配和完成只是简单的修改状态</li>
@@ -133,13 +133,13 @@
 <li>timeout</li>
 </ol>
 <p>mac 系统默认没有 timeout 命令，需手动安装</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">brew install coreutils
-</code></pre></div><ol start="2">
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>brew install coreutils
+</span></span></code></pre></div><ol start="2">
 <li>wait -n</li>
 </ol>
 <p>mac 自动 bash 版本过低，需要升级 bash 版本</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-shell" data-lang="shell">brew install bash
-</code></pre></div><p>最后，附上运行结果</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>brew install bash
+</span></span></code></pre></div><p>最后，附上运行结果</p>
 <p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/blog/image-20210530002821636.png" alt="image-20210530002821636"></p>
 
 

@@ -6,7 +6,37 @@
     <description>Recent content in Posts on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Mon, 10 Jan 2022 23:37:13 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Thu, 31 Mar 2022 08:30:43 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Goleveldb源码分析（二）缓存</title>
+      <link>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%BA%8C%E7%BC%93%E5%AD%98/</link>
+      <pubDate>Thu, 31 Mar 2022 08:30:43 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%BA%8C%E7%BC%93%E5%AD%98/</guid>
+      <description>缓存 缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：
+ 已打开的sstable文件对象和相关元数据； sstable中的dataBlock的内容。  整体结构 Leveldb中使用的Cache是一种LRUcache，其结构由两部分内容组成：
+ Hash table：用来存储数据； LRU：用来维护数据项的新旧信息。   缓存系统：
+// 缓存 type Cache struct { 	mu sync.RWMutex // 读写锁 	mHead unsafe.Pointer // *mNode 指向哈希表 	nodes int32 // 哈希表中的节点个数 	size int32 // 哈希表大小 	cacher Cacher // 缓存策略 	closed bool // 是否关闭 } 缓存策略：
+// 缓存策略接口，并发安全 // 以下的缓存皆指缓存策略 type Cacher interface { 	// 缓存容量 	Capacity() int  	// 设置缓存容量 	SetCapacity(capacity int)  	// 添加节点的到缓存中 	Promote(n *Node)  	// 将节点从缓存中删除，并尝试将其从哈希表中删除 	Ban(n *Node)  	// 将节点从缓存中删除 	Evict(n *Node)  	// 将所有给定的命名空间的节点从缓存中删除 	EvictNS(ns uint64)  	// 将缓存中的所有节点删除 	EvictAll()  	// 关闭缓存 	Close() error } 实现 再依次看一下上述各个结构实现与核心方法，以及如何组合在一起对外提供缓存的功能。</description>
+    </item>
+    
+    <item>
+      <title>Goleveldb源码分析（一）编码</title>
+      <link>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%80%E7%BC%96%E7%A0%81/</link>
+      <pubDate>Thu, 31 Mar 2022 08:30:25 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%80%E7%BC%96%E7%A0%81/</guid>
+      <description>LevelDB 研究一下基于Go语言的Leveldb的源码，参考作者的配套wiki。
+Leveldb的整体流程如下图所示 基础 先从一些外围基础的概念开始看起。
+编码 Leveldb使用encoding/binary标准库对数据进行编解码，这里将详细介绍它的规则。
+大小端 字节序简单来说就是多字节对象在内存中的排列顺序，主要分为两种，大端序和小端序。
+大端序，高位存在较大地址处。 示例中，最高位字节是0x0A 存储在最低的内存地址处。下一个字节0x0B存在后面的地址处。正类似于十六进制字节从左到右的阅读顺序。
+小端序，低位存在较大地址处。 最低位字节是0x0D 存储在最低的内存地址处。后面字节依次存在后面的地址处。
+在encoding/binary中定义了字节序的接口，同时也定义了大小端
+type ByteOrder interface { 	Uint16([]byte) uint16 	Uint32([]byte) uint32 	Uint64([]byte) uint64 	PutUint16([]byte, uint16) 	PutUint32([]byte, uint32) 	PutUint64([]byte, uint64) 	String() string }  type littleEndian struct{} var LittleEndian littleEndian  type bigEndian struct{} var BigEndian bigEndian 看下编码的实例
+package main  import ( 	&amp;#34;encoding/binary&amp;#34; 	&amp;#34;fmt&amp;#34; )  func BigEndian() { // 大端序 	// 二进制形式：0000 0000 0000 0000 0001 0002 0003 0004 	var testInt int32 = 0x01020304 // 十六进制表示 	fmt.</description>
+    </item>
+    
     <item>
       <title>6.824 Lab2A</title>
       <link>https://wuliuqii.github.io/posts/6.824-lab2a/</link>
@@ -21,7 +51,7 @@ Lab2: https://pdos.csail.mit.edu/6.824/labs/lab-raft.html
 raft 基础 raft 集群中的服务器节点都处于一下三个状态之一：领导人、跟随者和候选人。正常的情况中，系统中应该只有一个领导人，并且其他节点都是跟随者。跟随者被动响应来着领导人或候选人的请求。领导人和客户端交互。候选人在选举新领导人的时候出现。
 raft 把时间分割成任意长度的任期。任期用连续的整数标记。每一段任期从一次选举开始，一个或者多个候选人尝试成为领导人。如果一个候选人赢得选举，然后他就在接下来的任期内充当领导人的职责。在某些情况下，一次选举过程会造成选票的瓜分。在这种情况下，这一任期会以没有领导人结束；一个新的任期（和一次新的选举）会很快重新开始。raft 保证了在一个给定的任期内，最多只有一个领导人。
 实现 2A 中，只关注选举的过程，所以我们目前仅关注部分参数以及选举和心跳流程。
-type Raft struct { mu sync.Mutex // Lock to protect shared access to this peer&amp;#39;s state 	peers []*labrpc.ClientEnd // RPC end points of all peers 	persister *Persister // Object to hold this peer&amp;#39;s persisted state 	me int // this peer&amp;#39;s index into peers[] 	dead int32 // set by Kill()  // 2A.</description>
+type Raft struct { 	mu sync.Mutex // Lock to protect shared access to this peer&amp;#39;s state 	peers []*labrpc.ClientEnd // RPC end points of all peers 	persister *Persister // Object to hold this peer&amp;#39;s persisted state 	me int // this peer&amp;#39;s index into peers[] 	dead int32 // set by Kill()  	// 2A.</description>
     </item>
     
     <item>
@@ -48,7 +78,7 @@ x ^ 0 = x XOR 和自身 任何一个数和自身 XOR 的结果为 0</description
       <description>第 264 场周赛 https://leetcode-cn.com/contest/weekly-contest-264?utm_campaign=weekly_contest_2021_cider_264&amp;amp;utm_medium=leetcode_message&amp;amp;utm_source=message&amp;amp;gio_link_id=Y9JBn239
 句子中的有效单词 https://leetcode-cn.com/problems/number-of-valid-words-in-a-sentence/
 思路 直接模拟
-代码 func countValidWords(sentence string) int { res := 0 tokens := strings.Fields(sentence) // 按照空格划分 	for _, token := range tokens { if isValid(token) { res++ } } return res } func isValid(token string) bool { if strings.ContainsAny(token, &amp;#34;0123456789&amp;#34;) { // 不能有数字 	return false } n := len(token) i := strings.IndexByte(token, &amp;#39;-&amp;#39;) if i &amp;gt;= 0 &amp;amp;&amp;amp; (strings.Contains(token[i+1:], &amp;#34;-&amp;#34;) || // 最多只能有一个连字符, 且左右都为小写字母 	i == 0 || i == n-1 || !</description>
+代码 func countValidWords(sentence string) int { 	res := 0 	tokens := strings.Fields(sentence) // 按照空格划分 	for _, token := range tokens { 	if isValid(token) { 	res++ 	} 	} 	return res }  func isValid(token string) bool { 	if strings.ContainsAny(token, &amp;#34;0123456789&amp;#34;) { // 不能有数字 	return false 	}  	n := len(token) 	i := strings.</description>
     </item>
     
     <item>
@@ -67,10 +97,10 @@ Lab1: https://pdos.csail.mit.edu/6.824/labs/lab-mr.html
     
     <item>
       <title>Ostep  Virtualization</title>
-      <link>https://wuliuqii.github.io/posts/ostep-virtualization/</link>
+      <link>https://wuliuqii.github.io/posts/ostep--virtualization/</link>
       <pubDate>Thu, 02 Apr 2020 10:34:27 +0800</pubDate>
       
-      <guid>https://wuliuqii.github.io/posts/ostep-virtualization/</guid>
+      <guid>https://wuliuqii.github.io/posts/ostep--virtualization/</guid>
       <description>CPU 虚拟化 操作系统通过低级机制和高级策略实现 CPU 虚拟化。机制就是一些低级方法和协议，如上下切换，时分共享。策略是在操作系统中作出某种决定的算法。
  你可以将机制看 成为系统的“如何（how）”问题提供答案。例如，操作系统如何执行上下文切换？策略为“哪个（which）” 问题提供答案。例如，操作系统现在应该运行哪个进程？将两者分开可以轻松地改变策略，而不必重新考虑机制，因此这是一种模块化（modularity）的形式，一种通用的软件设计原则。
  进程 进程：运行中的程序。

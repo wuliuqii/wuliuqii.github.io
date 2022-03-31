@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Hugo 0.92.0" />
+  <meta name="generator" content="Hugo 0.96.0" />
 
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -56,90 +56,91 @@
 <p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/6.824-term.png" alt=""></p>
 <h2 id="实现">实现</h2>
 <p>2A 中，只关注选举的过程，所以我们目前仅关注部分参数以及选举和心跳流程。</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Raft</span> <span style="color:#66d9ef">struct</span> {
-	<span style="color:#a6e22e">mu</span>        <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">Mutex</span>          <span style="color:#75715e">// Lock to protect shared access to this peer&#39;s state
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">peers</span>     []<span style="color:#f92672">*</span><span style="color:#a6e22e">labrpc</span>.<span style="color:#a6e22e">ClientEnd</span> <span style="color:#75715e">// RPC end points of all peers
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">persister</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Persister</span>          <span style="color:#75715e">// Object to hold this peer&#39;s persisted state
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">me</span>        <span style="color:#66d9ef">int</span>                 <span style="color:#75715e">// this peer&#39;s index into peers[]
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">dead</span>      <span style="color:#66d9ef">int32</span>               <span style="color:#75715e">// set by Kill()
-</span><span style="color:#75715e"></span>
-	<span style="color:#75715e">// 2A.
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">state</span> <span style="color:#a6e22e">raftState</span>
-	<span style="color:#a6e22e">term</span>  <span style="color:#66d9ef">int</span>
-	<span style="color:#75715e">// -1 for null
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">votedFor</span> <span style="color:#66d9ef">int</span>
-
-	<span style="color:#75715e">// election timer for follower and candidate to start a election
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">electionTime</span>    <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Time</span>
-	<span style="color:#a6e22e">electionTimeout</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Duration</span>
-	<span style="color:#75715e">// only leader has a heartbeat timer
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">HeartbeatTime</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Time</span>
-}
-</code></pre></div><h3 id="选举">选举</h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestVoteArgs</span> <span style="color:#66d9ef">struct</span> {
-	<span style="color:#75715e">// 候选者的任期
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Term</span> <span style="color:#66d9ef">int</span>
-	<span style="color:#75715e">// 候选者 ID
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">CandidateId</span> <span style="color:#66d9ef">int</span>
-}
-
-<span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestVoteReply</span> <span style="color:#66d9ef">struct</span> {
-    <span style="color:#75715e">// 选民的任期，用于候选者更新自己的任期
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Term</span> <span style="color:#66d9ef">int</span>
-	<span style="color:#75715e">// 是否得到选票
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">VoteGranted</span> <span style="color:#66d9ef">bool</span>
-}
-</code></pre></div><h4 id="候选者--跟随者">候选者 &amp; 跟随者</h4>
-<p>当跟随者或候选者的选举定时器超时，便会转换成候选者，同时将自身的任期加 1</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">Leader</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Since</span>(<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTime</span>) &gt; <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTimeout</span> {
-    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span><span style="color:#f92672">++</span>
-    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Candidate</span>
-    <span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dVote</span>, <span style="color:#e6db74">&#34;S%d become to Candidate&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>)
-    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">startElection</span>()
-}
-</code></pre></div><p>然后向集群中所有的其他的服务器<strong>同步</strong>发送 RequestVote RPC</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">peers</span> {
-    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span> {
-        <span style="color:#66d9ef">continue</span>
-    }
-    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">server</span> <span style="color:#66d9ef">int</span>) {
-        <span style="color:#a6e22e">reply</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">RequestVoteReply</span>{}
-        <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">sendRequestVote</span>(<span style="color:#a6e22e">server</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">args</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">reply</span>)
-        <span style="color:#a6e22e">replyCh</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">VoteGranted</span>
-        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span> &gt; <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> {
-            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> = <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span>
-            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
-            <span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dTerm</span>, <span style="color:#e6db74">&#34;C%d term is outdated, updating T%d-&gt;T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>, <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span>)
-        }
-    }(<span style="color:#a6e22e">i</span>)
-}
-</code></pre></div><p>候选者发起选举后， 有三种结果</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Raft</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">mu</span>        <span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">Mutex</span>          <span style="color:#75715e">// Lock to protect shared access to this peer&#39;s state
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">peers</span>     []<span style="color:#f92672">*</span><span style="color:#a6e22e">labrpc</span>.<span style="color:#a6e22e">ClientEnd</span> <span style="color:#75715e">// RPC end points of all peers
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">persister</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Persister</span>          <span style="color:#75715e">// Object to hold this peer&#39;s persisted state
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">me</span>        <span style="color:#66d9ef">int</span>                 <span style="color:#75715e">// this peer&#39;s index into peers[]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">dead</span>      <span style="color:#66d9ef">int32</span>               <span style="color:#75715e">// set by Kill()
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 2A.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">state</span> <span style="color:#a6e22e">raftState</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">term</span>  <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// -1 for null
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">votedFor</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// election timer for follower and candidate to start a election
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">electionTime</span>    <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Time</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">electionTimeout</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Duration</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// only leader has a heartbeat timer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">HeartbeatTime</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Time</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="选举">选举</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestVoteArgs</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 候选者的任期
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Term</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 候选者 ID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">CandidateId</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">RequestVoteReply</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// 选民的任期，用于候选者更新自己的任期
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Term</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 是否得到选票
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">VoteGranted</span> <span style="color:#66d9ef">bool</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="候选者--跟随者">候选者 &amp; 跟随者</h4>
+<p>当跟随者或候选者的选举定时器超时，便会将自身的任期加 1，投自己一票，并转换成候选者</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">Leader</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Since</span>(<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTime</span>) &gt; <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTimeout</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> = <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Candidate</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dVote</span>, <span style="color:#e6db74">&#34;S%d become to Candidate&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>)
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">startElection</span>()
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>然后向集群中所有的其他的服务器<strong>同步</strong>发送 RequestVote RPC</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">peers</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">server</span> <span style="color:#66d9ef">int</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">reply</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">RequestVoteReply</span>{}
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">sendRequestVote</span>(<span style="color:#a6e22e">server</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">args</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">reply</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">replyCh</span> <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">VoteGranted</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span> &gt; <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> = <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dTerm</span>, <span style="color:#e6db74">&#34;C%d term is outdated, updating T%d-&gt;T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>, <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span>)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }(<span style="color:#a6e22e">i</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>候选者发起选举后， 有三种结果</p>
 <ol>
 <li>获得大多数选票（半数以上），竞选成功，转换成领导者，同时向集群中其他服务器发送心跳包，建立领导者的权威</li>
 </ol>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#75715e">// handle RequestVote reply
-</span><span style="color:#75715e"></span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">reply</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">replyCh</span> {
-    <span style="color:#a6e22e">replyCnt</span><span style="color:#f92672">++</span>
-    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">reply</span> {
-        <span style="color:#75715e">// get a vote
-</span><span style="color:#75715e"></span>        <span style="color:#a6e22e">grantedVote</span><span style="color:#f92672">++</span>
-    }
-    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">replyCnt</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">all</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">grantedVote</span> &gt; <span style="color:#a6e22e">all</span><span style="color:#f92672">/</span><span style="color:#ae81ff">2</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">replyCnt</span><span style="color:#f92672">-</span><span style="color:#a6e22e">grantedVote</span> &gt; <span style="color:#a6e22e">all</span><span style="color:#f92672">/</span><span style="color:#ae81ff">2</span> {
-        <span style="color:#66d9ef">break</span>
-    }
-}
-
-<span style="color:#75715e">// not win the election
-</span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">grantedVote</span> <span style="color:#f92672">&lt;=</span> <span style="color:#a6e22e">all</span><span style="color:#f92672">/</span><span style="color:#ae81ff">2</span> {
-    <span style="color:#66d9ef">return</span>
-}
-<span style="color:#75715e">// win
-</span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">Candidate</span> {
-    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Leader</span>
-    <span style="color:#66d9ef">go</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">startHeartbeat</span>()
-    <span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dLeader</span>, <span style="color:#e6db74">&#34;C%d get majority votes (%d/%d), become to Leader&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">grantedVote</span>, <span style="color:#a6e22e">all</span>)
-}
-</code></pre></div><ol start="2">
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// handle RequestVote reply
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">reply</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">replyCh</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">replyCnt</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">reply</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#75715e">// get a vote
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#a6e22e">grantedVote</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">replyCnt</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">all</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">grantedVote</span> &gt; <span style="color:#a6e22e">all</span><span style="color:#f92672">/</span><span style="color:#ae81ff">2</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">replyCnt</span><span style="color:#f92672">-</span><span style="color:#a6e22e">grantedVote</span> &gt; <span style="color:#a6e22e">all</span><span style="color:#f92672">/</span><span style="color:#ae81ff">2</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">break</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// not win the election
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">grantedVote</span> <span style="color:#f92672">&lt;=</span> <span style="color:#a6e22e">all</span><span style="color:#f92672">/</span><span style="color:#ae81ff">2</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// win
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">Candidate</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Leader</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">go</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">startHeartbeat</span>()
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dLeader</span>, <span style="color:#e6db74">&#34;C%d get majority votes (%d/%d), become to Leader&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">grantedVote</span>, <span style="color:#a6e22e">all</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><ol start="2">
 <li>
 <p>选举定时器超时前未获得大多数选票，则进入下一个竞选周期到来，重复上述流程</p>
 </li>
@@ -157,90 +158,90 @@
 <p>先到先得</p>
 </li>
 </ol>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">rf</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Raft</span>) <span style="color:#a6e22e">RequestVote</span>(<span style="color:#a6e22e">args</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">RequestVoteArgs</span>, <span style="color:#a6e22e">reply</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">RequestVoteReply</span>) {
-	<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dVote</span>, <span style="color:#e6db74">&#34;S%d received vote request from C%d at T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">CandidateId</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>)
-
-	<span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span> = <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>
-	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> &lt; <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> {
-		<span style="color:#66d9ef">return</span>
-	}
-
-	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> &gt; <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> {
-		<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dTerm</span>, <span style="color:#e6db74">&#34;S%d term is outdated, updating T%d-&gt;T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>)
-		<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> = <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>
-		<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
-	}
-
-	<span style="color:#75715e">// votedFor is not null or candidateId
-</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> <span style="color:#f92672">!=</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">CandidateId</span> {
-		<span style="color:#66d9ef">return</span>
-	}
-
-	<span style="color:#75715e">// candidate get the vote
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">VoteGranted</span> = <span style="color:#66d9ef">true</span>
-	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> = <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>
-	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> = <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">CandidateId</span>
-	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
-	<span style="color:#75715e">// reset timer
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTime</span> = <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>()
-	<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dVote</span>, <span style="color:#e6db74">&#34;S%d resetting ELT, granting vote to C%d at T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">CandidateId</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>)
-	<span style="color:#66d9ef">return</span>
-}
-</code></pre></div><p>目前的流程还是比较简单的，只要任期和选票满足条件，就投出选票。然后重置自己的选举定时器。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">rf</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Raft</span>) <span style="color:#a6e22e">RequestVote</span>(<span style="color:#a6e22e">args</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">RequestVoteArgs</span>, <span style="color:#a6e22e">reply</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">RequestVoteReply</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dVote</span>, <span style="color:#e6db74">&#34;S%d received vote request from C%d at T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">CandidateId</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span> = <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> &lt; <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> &gt; <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dTerm</span>, <span style="color:#e6db74">&#34;S%d term is outdated, updating T%d-&gt;T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> = <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// votedFor is not null or candidateId
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> <span style="color:#f92672">!=</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">CandidateId</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// candidate get the vote
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">VoteGranted</span> = <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> = <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">votedFor</span> = <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">CandidateId</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// reset timer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTime</span> = <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>()
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dVote</span>, <span style="color:#e6db74">&#34;S%d resetting ELT, granting vote to C%d at T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">CandidateId</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>目前的流程还是比较简单的，只要任期和选票满足条件，就投出选票。然后重置自己的选举定时器。</p>
 <h3 id="心跳">心跳</h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">AppendEntriesArgs</span> <span style="color:#66d9ef">struct</span> {
-	<span style="color:#75715e">// 领导者任期
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Term</span> <span style="color:#66d9ef">int</span>
-	<span style="color:#75715e">// 领导之 ID
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">LeaderId</span> <span style="color:#66d9ef">int</span>
-}
-
-<span style="color:#66d9ef">type</span> <span style="color:#a6e22e">AppendEntriesReply</span> <span style="color:#66d9ef">struct</span> {
-	<span style="color:#75715e">// 响应者的任期，用于领导者更新自己的状态
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Term</span> <span style="color:#66d9ef">int</span>
-	<span style="color:#75715e">// 响应成功
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Success</span> <span style="color:#66d9ef">bool</span>
-}
-</code></pre></div><h4 id="领导者">领导者</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">AppendEntriesArgs</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 领导者任期
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Term</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 领导之 ID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">LeaderId</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">AppendEntriesReply</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 响应者的任期，用于领导者更新自己的状态
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Term</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 响应成功
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">Success</span> <span style="color:#66d9ef">bool</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="领导者">领导者</h4>
 <p>领导者会<strong>周期性</strong>的给集群中所有的其他服务器发送心跳包以确定集群的状态</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">Leader</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Since</span>(<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">HeartbeatTime</span>) &gt; <span style="color:#a6e22e">HeartbeatTimeout</span> {
-    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">startHeartbeat</span>()
-}
-</code></pre></div><p>心跳其实就是一个特殊的 AppendEntries，它的附加日志为空</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">peers</span> {
-    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span> {
-        <span style="color:#66d9ef">continue</span>
-    }
-    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">server</span> <span style="color:#66d9ef">int</span>) {
-        <span style="color:#a6e22e">reply</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">AppendEntriesReply</span>{}
-        <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">sendAppendEntries</span>(<span style="color:#a6e22e">server</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">args</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">reply</span>)
-        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span> &gt; <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> {
-            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> = <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>
-            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
-            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTime</span> = <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>()
-            <span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dTerm</span>, <span style="color:#e6db74">&#34;L%d term is outdated, updating T%d-&gt;T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>, <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span>)
-        }
-    }(<span style="color:#a6e22e">i</span>)
-}
-</code></pre></div><h4 id="候选者--跟随者-1">候选者 &amp; 跟随者</h4>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">Leader</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Since</span>(<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">HeartbeatTime</span>) &gt; <span style="color:#a6e22e">HeartbeatTimeout</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">startHeartbeat</span>()
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>心跳其实就是一个特殊的 AppendEntries，它的附加日志为空</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">peers</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">continue</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">go</span> <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">server</span> <span style="color:#66d9ef">int</span>) {
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">reply</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">AppendEntriesReply</span>{}
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">sendAppendEntries</span>(<span style="color:#a6e22e">server</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">args</span>, <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">reply</span>)
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span> &gt; <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> {
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> = <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTime</span> = <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>()
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dTerm</span>, <span style="color:#e6db74">&#34;L%d term is outdated, updating T%d-&gt;T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>, <span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span>)
+</span></span><span style="display:flex;"><span>        }
+</span></span><span style="display:flex;"><span>    }(<span style="color:#a6e22e">i</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h4 id="候选者--跟随者-1">候选者 &amp; 跟随者</h4>
 <p>当其他节点收到领导者的<strong>合法</strong>心跳后变会重置自己的选举定时器</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">rf</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Raft</span>) <span style="color:#a6e22e">AppendEntries</span>(<span style="color:#a6e22e">args</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">AppendEntriesArgs</span>, <span style="color:#a6e22e">reply</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">AppendEntriesReply</span>) {
-	<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dLog</span>, <span style="color:#e6db74">&#34;S%d received append entries from L%d at T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">LeaderId</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>)
-
-	<span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span> = <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>
-	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> &lt; <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> {
-		<span style="color:#66d9ef">return</span>
-	}
-
-	<span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Success</span> = <span style="color:#66d9ef">true</span>
-	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
-	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> = <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>
-	<span style="color:#75715e">// reset timer
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTime</span> = <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>()
-	<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dTimer</span>, <span style="color:#e6db74">&#34;S%d resetting ELT, received ae from L%d at T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">LeaderId</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>)
-	<span style="color:#66d9ef">return</span>
-}
-</code></pre></div><h2 id="注意">注意</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">rf</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Raft</span>) <span style="color:#a6e22e">AppendEntries</span>(<span style="color:#a6e22e">args</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">AppendEntriesArgs</span>, <span style="color:#a6e22e">reply</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">AppendEntriesReply</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dLog</span>, <span style="color:#e6db74">&#34;S%d received append entries from L%d at T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">LeaderId</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Term</span> = <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span> &lt; <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">reply</span>.<span style="color:#a6e22e">Success</span> = <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">state</span> = <span style="color:#a6e22e">Follower</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span> = <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">Term</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// reset timer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">electionTime</span> = <span style="color:#a6e22e">time</span>.<span style="color:#a6e22e">Now</span>()
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Debug</span>(<span style="color:#a6e22e">dTimer</span>, <span style="color:#e6db74">&#34;S%d resetting ELT, received ae from L%d at T%d&#34;</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">me</span>, <span style="color:#a6e22e">args</span>.<span style="color:#a6e22e">LeaderId</span>, <span style="color:#a6e22e">rf</span>.<span style="color:#a6e22e">term</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h2 id="注意">注意</h2>
 <ol>
 <li>前面所有的代码片段都只是示意，并没有加锁</li>
 <li>上面的流程仅关注 2A 的实现，暂时不涉及日志的校验</li>

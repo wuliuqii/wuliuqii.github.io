@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8">
-  <meta name="generator" content="Hugo 0.92.0" />
+  <meta name="generator" content="Hugo 0.96.0" />
 
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -44,68 +44,68 @@
 <h3 id="思路">思路</h3>
 <p>直接模拟</p>
 <h3 id="代码">代码</h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">countValidWords</span>(<span style="color:#a6e22e">sentence</span> <span style="color:#66d9ef">string</span>) <span style="color:#66d9ef">int</span> {
-	<span style="color:#a6e22e">res</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>
-	<span style="color:#a6e22e">tokens</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">Fields</span>(<span style="color:#a6e22e">sentence</span>) <span style="color:#75715e">// 按照空格划分
-</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">token</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">tokens</span> {
-		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">isValid</span>(<span style="color:#a6e22e">token</span>) {
-			<span style="color:#a6e22e">res</span><span style="color:#f92672">++</span>
-		}
-	}
-	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">res</span>
-}
-
-<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">isValid</span>(<span style="color:#a6e22e">token</span> <span style="color:#66d9ef">string</span>) <span style="color:#66d9ef">bool</span> {
-	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">ContainsAny</span>(<span style="color:#a6e22e">token</span>, <span style="color:#e6db74">&#34;0123456789&#34;</span>) { <span style="color:#75715e">// 不能有数字
-</span><span style="color:#75715e"></span>		<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
-	}
-
-	<span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">token</span>)
-	<span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">IndexByte</span>(<span style="color:#a6e22e">token</span>, <span style="color:#e6db74">&#39;-&#39;</span>)
-	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">&amp;&amp;</span> (<span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">Contains</span>(<span style="color:#a6e22e">token</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>:], <span style="color:#e6db74">&#34;-&#34;</span>) <span style="color:#f92672">||</span> <span style="color:#75715e">// 最多只能有一个连字符, 且左右都为小写字母
-</span><span style="color:#75715e"></span>		<span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">n</span><span style="color:#f92672">-</span><span style="color:#ae81ff">1</span> <span style="color:#f92672">||</span> !<span style="color:#a6e22e">unicode</span>.<span style="color:#a6e22e">IsLetter</span>(rune(<span style="color:#a6e22e">token</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>])) <span style="color:#f92672">||</span> !<span style="color:#a6e22e">unicode</span>.<span style="color:#a6e22e">IsLetter</span>(rune(<span style="color:#a6e22e">token</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>]))) {
-		<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
-	}
-
-	<span style="color:#a6e22e">flag</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">false</span> <span style="color:#75715e">// 是否有多个符号
-</span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">s</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#e6db74">&#34;!.,&#34;</span> {
-		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">IndexRune</span>(<span style="color:#a6e22e">token</span>, <span style="color:#a6e22e">s</span>); <span style="color:#a6e22e">i</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0</span> {
-			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">flag</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">n</span><span style="color:#f92672">-</span><span style="color:#ae81ff">1</span> {
-				<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
-			}
-			<span style="color:#a6e22e">flag</span> = <span style="color:#66d9ef">true</span>
-		}
-	}
-
-	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>
-}
-</code></pre></div><h2 id="下一个更大的数值平衡数">下一个更大的数值平衡数</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">countValidWords</span>(<span style="color:#a6e22e">sentence</span> <span style="color:#66d9ef">string</span>) <span style="color:#66d9ef">int</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">res</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">tokens</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">Fields</span>(<span style="color:#a6e22e">sentence</span>) <span style="color:#75715e">// 按照空格划分
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">token</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">tokens</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">isValid</span>(<span style="color:#a6e22e">token</span>) {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">res</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">res</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">isValid</span>(<span style="color:#a6e22e">token</span> <span style="color:#66d9ef">string</span>) <span style="color:#66d9ef">bool</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">ContainsAny</span>(<span style="color:#a6e22e">token</span>, <span style="color:#e6db74">&#34;0123456789&#34;</span>) { <span style="color:#75715e">// 不能有数字
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">token</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">IndexByte</span>(<span style="color:#a6e22e">token</span>, <span style="color:#e6db74">&#39;-&#39;</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">&amp;&amp;</span> (<span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">Contains</span>(<span style="color:#a6e22e">token</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>:], <span style="color:#e6db74">&#34;-&#34;</span>) <span style="color:#f92672">||</span> <span style="color:#75715e">// 最多只能有一个连字符, 且左右都为小写字母
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">n</span><span style="color:#f92672">-</span><span style="color:#ae81ff">1</span> <span style="color:#f92672">||</span> !<span style="color:#a6e22e">unicode</span>.<span style="color:#a6e22e">IsLetter</span>(rune(<span style="color:#a6e22e">token</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>])) <span style="color:#f92672">||</span> !<span style="color:#a6e22e">unicode</span>.<span style="color:#a6e22e">IsLetter</span>(rune(<span style="color:#a6e22e">token</span>[<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>]))) {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">flag</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">false</span> <span style="color:#75715e">// 是否有多个符号
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">s</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#e6db74">&#34;!.,&#34;</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">strings</span>.<span style="color:#a6e22e">IndexRune</span>(<span style="color:#a6e22e">token</span>, <span style="color:#a6e22e">s</span>); <span style="color:#a6e22e">i</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">flag</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">n</span><span style="color:#f92672">-</span><span style="color:#ae81ff">1</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">flag</span> = <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h2 id="下一个更大的数值平衡数">下一个更大的数值平衡数</h2>
 <p><a href="https://leetcode-cn.com/problems/next-greater-numerically-balanced-number/">https://leetcode-cn.com/problems/next-greater-numerically-balanced-number/</a></p>
 <h3 id="思路-1">思路</h3>
 <p>暴力求解，直接枚举。</p>
 <p>凡是能暴力求解的，应该首先尝试暴力再想办法优化。</p>
 <h3 id="代码-1">代码</h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">nextBeautifulNumber</span>(<span style="color:#a6e22e">n</span> <span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">int</span> {
-	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">n</span><span style="color:#f92672">++</span>; ; <span style="color:#a6e22e">n</span><span style="color:#f92672">++</span> {
-		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">isBeautifulNumber</span>(<span style="color:#a6e22e">n</span>) {
-			<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">n</span>
-		}
-	}
-}
-
-<span style="color:#66d9ef">func</span> <span style="color:#a6e22e">isBeautifulNumber</span>(<span style="color:#a6e22e">n</span> <span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">bool</span> {
-	<span style="color:#a6e22e">cnt</span> <span style="color:#f92672">:=</span> make([]<span style="color:#66d9ef">int</span>, <span style="color:#ae81ff">10</span>)
-	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">x</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">n</span>; <span style="color:#a6e22e">x</span> &gt; <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">x</span> <span style="color:#f92672">/=</span> <span style="color:#ae81ff">10</span> {
-		<span style="color:#a6e22e">cnt</span>[<span style="color:#a6e22e">x</span><span style="color:#f92672">%</span><span style="color:#ae81ff">10</span>]<span style="color:#f92672">++</span>
-	}
-	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">x</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">n</span>; <span style="color:#a6e22e">x</span> &gt; <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">x</span> <span style="color:#f92672">/=</span> <span style="color:#ae81ff">10</span> {
-		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">cnt</span>[<span style="color:#a6e22e">x</span><span style="color:#f92672">%</span><span style="color:#ae81ff">10</span>] <span style="color:#f92672">!=</span> <span style="color:#a6e22e">x</span><span style="color:#f92672">%</span><span style="color:#ae81ff">10</span> {
-			<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
-		}
-	}
-	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>
-}
-</code></pre></div><h2 id="统计最高分的节点数目">统计最高分的节点数目</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">nextBeautifulNumber</span>(<span style="color:#a6e22e">n</span> <span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">int</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">n</span><span style="color:#f92672">++</span>; ; <span style="color:#a6e22e">n</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">isBeautifulNumber</span>(<span style="color:#a6e22e">n</span>) {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">n</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">isBeautifulNumber</span>(<span style="color:#a6e22e">n</span> <span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">bool</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">cnt</span> <span style="color:#f92672">:=</span> make([]<span style="color:#66d9ef">int</span>, <span style="color:#ae81ff">10</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">x</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">n</span>; <span style="color:#a6e22e">x</span> &gt; <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">x</span> <span style="color:#f92672">/=</span> <span style="color:#ae81ff">10</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">cnt</span>[<span style="color:#a6e22e">x</span><span style="color:#f92672">%</span><span style="color:#ae81ff">10</span>]<span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">x</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">n</span>; <span style="color:#a6e22e">x</span> &gt; <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">x</span> <span style="color:#f92672">/=</span> <span style="color:#ae81ff">10</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">cnt</span>[<span style="color:#a6e22e">x</span><span style="color:#f92672">%</span><span style="color:#ae81ff">10</span>] <span style="color:#f92672">!=</span> <span style="color:#a6e22e">x</span><span style="color:#f92672">%</span><span style="color:#ae81ff">10</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h2 id="统计最高分的节点数目">统计最高分的节点数目</h2>
 <p><a href="https://leetcode-cn.com/problems/count-nodes-with-the-highest-score/">https://leetcode-cn.com/problems/count-nodes-with-the-highest-score/</a></p>
 <h3 id="思路-2">思路</h3>
 <p>对于一个节点 v， 删除与 v 相连的边后，剩余两部分：</p>
@@ -114,40 +114,40 @@
 <li>去除以 v 为根的子树的剩余部分</li>
 </ol>
 <h3 id="代码-2">代码</h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">countHighestScoreNodes</span>(<span style="color:#a6e22e">parents</span> []<span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">int</span> {
-	<span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">parents</span>)
-	<span style="color:#a6e22e">g</span> <span style="color:#f92672">:=</span> make([][]<span style="color:#66d9ef">int</span>, <span style="color:#a6e22e">n</span>)
-	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">w</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>; <span style="color:#a6e22e">w</span> &lt; <span style="color:#a6e22e">n</span>; <span style="color:#a6e22e">w</span><span style="color:#f92672">++</span> { <span style="color:#75715e">// 重建二叉树
-</span><span style="color:#75715e"></span>		<span style="color:#a6e22e">v</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">parents</span>[<span style="color:#a6e22e">w</span>]
-		<span style="color:#a6e22e">g</span>[<span style="color:#a6e22e">v</span>] = append(<span style="color:#a6e22e">g</span>[<span style="color:#a6e22e">v</span>], <span style="color:#a6e22e">w</span>)
-	}
-
-	<span style="color:#a6e22e">maxScore</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>
-	<span style="color:#a6e22e">ans</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>
-	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">dfs</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">int</span> <span style="color:#75715e">// 计算以当前节点为根的子树的大小
-</span><span style="color:#75715e"></span>	<span style="color:#a6e22e">dfs</span> = <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">v</span> <span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">int</span> {
-		<span style="color:#a6e22e">size</span>, <span style="color:#a6e22e">score</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">1</span>
-		<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">w</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">g</span>[<span style="color:#a6e22e">v</span>] { <span style="color:#75715e">// 左右子树大小
-</span><span style="color:#75715e"></span>			<span style="color:#a6e22e">sz</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">dfs</span>(<span style="color:#a6e22e">w</span>)
-			<span style="color:#a6e22e">size</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">sz</span>
-			<span style="color:#a6e22e">score</span> <span style="color:#f92672">*=</span> <span style="color:#a6e22e">sz</span>
-		}
-		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">v</span> &gt; <span style="color:#ae81ff">0</span> { <span style="color:#75715e">// 去除以当前节点为根的子树后的剩余部分
-</span><span style="color:#75715e"></span>			<span style="color:#a6e22e">score</span> <span style="color:#f92672">*=</span> <span style="color:#a6e22e">n</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">size</span>
-		}
-		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">score</span> &gt; <span style="color:#a6e22e">maxScore</span> {
-			<span style="color:#a6e22e">maxScore</span> = <span style="color:#a6e22e">score</span>
-			<span style="color:#a6e22e">ans</span> = <span style="color:#ae81ff">1</span>
-		} <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">score</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">maxScore</span> {
-			<span style="color:#a6e22e">ans</span><span style="color:#f92672">++</span>
-		}
-		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">size</span>
-	}
-
-	<span style="color:#a6e22e">dfs</span>(<span style="color:#ae81ff">0</span>)
-	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">ans</span>
-}
-</code></pre></div><h2 id="并行课程-iii">并行课程 III</h2>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">countHighestScoreNodes</span>(<span style="color:#a6e22e">parents</span> []<span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">int</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">parents</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">g</span> <span style="color:#f92672">:=</span> make([][]<span style="color:#66d9ef">int</span>, <span style="color:#a6e22e">n</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">w</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>; <span style="color:#a6e22e">w</span> &lt; <span style="color:#a6e22e">n</span>; <span style="color:#a6e22e">w</span><span style="color:#f92672">++</span> { <span style="color:#75715e">// 重建二叉树
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">v</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">parents</span>[<span style="color:#a6e22e">w</span>]
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">g</span>[<span style="color:#a6e22e">v</span>] = append(<span style="color:#a6e22e">g</span>[<span style="color:#a6e22e">v</span>], <span style="color:#a6e22e">w</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">maxScore</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">ans</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">dfs</span> <span style="color:#66d9ef">func</span>(<span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">int</span> <span style="color:#75715e">// 计算以当前节点为根的子树的大小
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">dfs</span> = <span style="color:#66d9ef">func</span>(<span style="color:#a6e22e">v</span> <span style="color:#66d9ef">int</span>) <span style="color:#66d9ef">int</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">size</span>, <span style="color:#a6e22e">score</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">w</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">g</span>[<span style="color:#a6e22e">v</span>] { <span style="color:#75715e">// 左右子树大小
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">sz</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">dfs</span>(<span style="color:#a6e22e">w</span>)
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">size</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">sz</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">score</span> <span style="color:#f92672">*=</span> <span style="color:#a6e22e">sz</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">v</span> &gt; <span style="color:#ae81ff">0</span> { <span style="color:#75715e">// 去除以当前节点为根的子树后的剩余部分
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">score</span> <span style="color:#f92672">*=</span> <span style="color:#a6e22e">n</span> <span style="color:#f92672">-</span> <span style="color:#a6e22e">size</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">score</span> &gt; <span style="color:#a6e22e">maxScore</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">maxScore</span> = <span style="color:#a6e22e">score</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">ans</span> = <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>		} <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> <span style="color:#a6e22e">score</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">maxScore</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">ans</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">size</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">dfs</span>(<span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">ans</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h2 id="并行课程-iii">并行课程 III</h2>
 <p><a href="https://leetcode-cn.com/problems/parallel-courses-iii/">https://leetcode-cn.com/problems/parallel-courses-iii/</a></p>
 <h3 id="思路-3">思路</h3>
 <p>拓扑排序 + 动态规划

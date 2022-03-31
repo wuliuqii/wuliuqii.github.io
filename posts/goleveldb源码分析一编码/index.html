@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="Hugo 0.96.0" />
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="author" content="">
+  <meta property="og:url" content="https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%80%E7%BC%96%E7%A0%81/">
+
+  <title>Goleveldb源码分析（一）编码 - wuliuqi</title>
+  <meta property="og:title" content="Goleveldb源码分析（一）编码 - wuliuqi">
+  <meta property="og:type" content="article">
+  <meta name="description" content="">
+
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Code+Pro|Arvo:400,700">
+  <link rel="stylesheet" href="/css/highlight.css">
+  <link rel="stylesheet" href="/css/journal.css">
+  <link href="/index.xml" rel="alternate" type="application/rss+xml" title="wuliuqi">
+
+</head>
+
+<body>
+  <div class="container">
+
+    <nav class="site-nav">
+      <a href="https://wuliuqii.github.io/">Index</a>
+    </nav>
+
+
+<article class="post">
+    <header class="post-header">
+        <h1 class="post-title">Goleveldb源码分析（一）编码</h1>
+        <time class="post-date"
+            datetime="2022-03-31 08:30:25 &#43;0800">31 Mar 2022</time>
+    </header>
+
+    <h1 id="leveldb">LevelDB</h1>
+<p>研究一下基于Go语言的<a href="https://github.com/syndtr/goleveldb">Leveldb</a>的源码，参考作者的配套<a href="https://leveldb-handbook.readthedocs.io/zh/latest/rwopt.html">wiki</a>。</p>
+<p>Leveldb的整体流程如下图所示
+<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5Cimage.png" alt="image.png"></p>
+<h2 id="基础">基础</h2>
+<p>先从一些外围基础的概念开始看起。</p>
+<h3 id="编码">编码</h3>
+<p>Leveldb使用encoding/binary标准库对数据进行编解码，这里将详细介绍它的规则。</p>
+<h4 id="大小端httpswwwwikiwandcomenendianness"><a href="https://www.wikiwand.com/en/Endianness">大小端</a></h4>
+<p>字节序简单来说就是多字节对象在内存中的排列顺序，主要分为两种，大端序和小端序。</p>
+<p>大端序，高位存在较大地址处。
+<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5Cx_image.png" alt="image.png">
+<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5C9_image.png" alt="image.png"></p>
+<p>示例中，最高位字节是0x0A 存储在最低的内存地址处。下一个字节0x0B存在后面的地址处。正类似于十六进制字节从左到右的阅读顺序。</p>
+<p>小端序，低位存在较大地址处。
+<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5Cb_image.png" alt="image.png">
+<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5Cc_image.png" alt="image.png"></p>
+<p>最低位字节是0x0D 存储在最低的内存地址处。后面字节依次存在后面的地址处。</p>
+<p>在encoding/binary中定义了字节序的接口，同时也定义了大小端</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">ByteOrder</span> <span style="color:#66d9ef">interface</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Uint16</span>([]<span style="color:#66d9ef">byte</span>) <span style="color:#66d9ef">uint16</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Uint32</span>([]<span style="color:#66d9ef">byte</span>) <span style="color:#66d9ef">uint32</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">Uint64</span>([]<span style="color:#66d9ef">byte</span>) <span style="color:#66d9ef">uint64</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">PutUint16</span>([]<span style="color:#66d9ef">byte</span>, <span style="color:#66d9ef">uint16</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">PutUint32</span>([]<span style="color:#66d9ef">byte</span>, <span style="color:#66d9ef">uint32</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">PutUint64</span>([]<span style="color:#66d9ef">byte</span>, <span style="color:#66d9ef">uint64</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">String</span>() <span style="color:#66d9ef">string</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">littleEndian</span> <span style="color:#66d9ef">struct</span>{}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> <span style="color:#a6e22e">LittleEndian</span> <span style="color:#a6e22e">littleEndian</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">bigEndian</span> <span style="color:#66d9ef">struct</span>{}
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">var</span> <span style="color:#a6e22e">BigEndian</span> <span style="color:#a6e22e">bigEndian</span>
+</span></span></code></pre></div><p>看下编码的实例</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#f92672">package</span> <span style="color:#a6e22e">main</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">import</span> (
+</span></span><span style="display:flex;"><span>	<span style="color:#e6db74">&#34;encoding/binary&#34;</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#e6db74">&#34;fmt&#34;</span>
+</span></span><span style="display:flex;"><span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">BigEndian</span>() { <span style="color:#75715e">// 大端序
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 二进制形式：0000 0000 0000 0000 0001 0002 0003 0004
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">testInt</span> <span style="color:#66d9ef">int32</span> = <span style="color:#ae81ff">0x01020304</span> <span style="color:#75715e">// 十六进制表示
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;%d use big endian: \n&#34;</span>, <span style="color:#a6e22e">testInt</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">testBytes</span> []<span style="color:#66d9ef">byte</span> = make([]<span style="color:#66d9ef">byte</span>, <span style="color:#ae81ff">4</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">BigEndian</span>.<span style="color:#a6e22e">PutUint32</span>(<span style="color:#a6e22e">testBytes</span>, uint32(<span style="color:#a6e22e">testInt</span>)) <span style="color:#75715e">//大端序模式
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#e6db74">&#34;int32 to bytes:&#34;</span>, <span style="color:#a6e22e">testBytes</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">convInt</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">BigEndian</span>.<span style="color:#a6e22e">Uint32</span>(<span style="color:#a6e22e">testBytes</span>) <span style="color:#75715e">//大端序模式的字节转为int32
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;bytes to int32: %d\n\n&#34;</span>, <span style="color:#a6e22e">convInt</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">LittleEndian</span>() { <span style="color:#75715e">// 小端序
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">//二进制形式： 0000 0000 0000 0000 0001 0002 0003 0004
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">testInt</span> <span style="color:#66d9ef">int32</span> = <span style="color:#ae81ff">0x01020304</span> <span style="color:#75715e">// 16进制
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;%d use little endian: \n&#34;</span>, <span style="color:#a6e22e">testInt</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">testBytes</span> []<span style="color:#66d9ef">byte</span> = make([]<span style="color:#66d9ef">byte</span>, <span style="color:#ae81ff">4</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">LittleEndian</span>.<span style="color:#a6e22e">PutUint32</span>(<span style="color:#a6e22e">testBytes</span>, uint32(<span style="color:#a6e22e">testInt</span>)) <span style="color:#75715e">//小端序模式
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Println</span>(<span style="color:#e6db74">&#34;int32 to bytes:&#34;</span>, <span style="color:#a6e22e">testBytes</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">convInt</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">LittleEndian</span>.<span style="color:#a6e22e">Uint32</span>(<span style="color:#a6e22e">testBytes</span>) <span style="color:#75715e">//小端序模式的字节转换
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;bytes to int32: %d\n\n&#34;</span>, <span style="color:#a6e22e">convInt</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">BigEndian</span>()
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">LittleEndian</span>()
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// output：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 16909060 use big endian: 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// int32 to bytes: [1 2 3 4]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// bytes to int32: 16909060
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 16909060 use little endian: 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// int32 to bytes: [4 3 2 1]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// bytes to int32: 16909060
+</span></span></span></code></pre></div><h3 id="varint">varint</h3>
+<p>varint是一种使用一个或多个字节序列化整数的方法，会把整数编码为变长字节。对于32位整型数据经过varint编码后需要1-5个字节，小的数字使用1个byte，大的数字使用5个bytes。64位整型数据编码后占用1~10个字节。在实际场景中小数字的使用率远远多于大数字，因此通过varint编码对于大部分场景都可以起到很好的压缩效果。<br>
+看下源码：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#f92672">package</span> <span style="color:#a6e22e">binary</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 编码
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">PutUvarint</span>(<span style="color:#a6e22e">buf</span> []<span style="color:#66d9ef">byte</span>, <span style="color:#a6e22e">x</span> <span style="color:#66d9ef">uint64</span>) <span style="color:#66d9ef">int</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">x</span> <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0x80</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 从低位往高位依此取7bit，标志位置为1，组成一个byte
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">i</span>] = byte(<span style="color:#a6e22e">x</span>) | <span style="color:#ae81ff">0x80</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">x</span> <span style="color:#f92672">&gt;&gt;=</span> <span style="color:#ae81ff">7</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">i</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 最后一个byte，标志位为0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">i</span>] = byte(<span style="color:#a6e22e">x</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 解码
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">Uvarint</span>(<span style="color:#a6e22e">buf</span> []<span style="color:#66d9ef">byte</span>) (<span style="color:#66d9ef">uint64</span>, <span style="color:#66d9ef">int</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">x</span> <span style="color:#66d9ef">uint64</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">s</span> <span style="color:#66d9ef">uint</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span>, <span style="color:#a6e22e">b</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">buf</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">MaxVarintLen64</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// Catch byte reads past MaxVarintLen64.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#75715e">// See issue https://golang.org/issues/41185
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>, <span style="color:#f92672">-</span>(<span style="color:#a6e22e">i</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#75715e">// overflow
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">b</span> &lt; <span style="color:#ae81ff">0x80</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">MaxVarintLen64</span><span style="color:#f92672">-</span><span style="color:#ae81ff">1</span> <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">b</span> &gt; <span style="color:#ae81ff">1</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>, <span style="color:#f92672">-</span>(<span style="color:#a6e22e">i</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#75715e">// overflow
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 最后一个byte
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">x</span> | uint64(<span style="color:#a6e22e">b</span>)<span style="color:#f92672">&lt;&lt;</span><span style="color:#a6e22e">s</span>, <span style="color:#a6e22e">i</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 取当前byte的后7bit
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">x</span> <span style="color:#f92672">|=</span> uint64(<span style="color:#a6e22e">b</span><span style="color:#f92672">&amp;</span><span style="color:#ae81ff">0x7f</span>) <span style="color:#f92672">&lt;&lt;</span> <span style="color:#a6e22e">s</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">s</span> <span style="color:#f92672">+=</span> <span style="color:#ae81ff">7</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>看个实例：</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">buf</span> <span style="color:#f92672">:=</span> make([]<span style="color:#66d9ef">byte</span>, <span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">MaxVarintLen64</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">x</span> <span style="color:#66d9ef">int64</span> = <span style="color:#ae81ff">123456</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 二进制形式：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 0001 1110 0010 0100 0000
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 按照7bit一组：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 0000111 1000100 1000000
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 从低位往高位以此取7bit，重新编码，注意是反转排序，全0的bit舍弃
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 1000000 1000100 0000111
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 再加上标志位，每7bit组成一个字节，如果后面还有字节，则标志位为1，反之为0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// varint编码：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 11000000 11000100 00000111
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// 0xc0		0xc4	 0x07
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">PutVarint</span>(<span style="color:#a6e22e">buf</span>, <span style="color:#a6e22e">x</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;%b %x\n&#34;</span>, <span style="color:#a6e22e">buf</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">n</span>, <span style="color:#a6e22e">_</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">Uvarint</span>(<span style="color:#a6e22e">buf</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">fmt</span>.<span style="color:#a6e22e">Printf</span>(<span style="color:#e6db74">&#34;%b\n&#34;</span>, <span style="color:#a6e22e">n</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// output：
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// [11000000 11000100 111 0 0 0 0 0 0 0]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// c0c40700000000000000
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 11110001001000000
+</span></span></span></code></pre></div>
+
+</article>
+
+<footer class="site-footer">
+    <span itemscope itemtype="http://schema.org/Person">
+        <link itemprop="url" href="https://wuliuqii.github.io/">
+        <span itemprop="name"></span>
+
+        <br>
+
+        
+
+        
+
+        
+    </span>
+
+
+    <br><br>
+
+    <div style="text-align:center">
+        <small>
+            <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img
+                    alt="Creative Commons License" style="border-width:0"
+                    src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />Content of this site is
+            licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons
+                Attribution-NonCommercial-ShareAlike 4.0 International License</a>.
+        </small>
+    </div>
+
+    
+</footer>
+</div>
+
+<script src="/js/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+
+</body>
+
+</html>
+
+<script type="text/javascript" async
+    src="https://cdn.bootcss.com/mathjax/2.7.3/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+        MathJax.Hub.Config({
+            tex2jax: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\[\[', '\]\]']],
+                processEscapes: true,
+                processEnvironments: true,
+                skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+                TeX: {
+                    equationNumbers: {autoNumber: "AMS"},
+                    extensions: ["AMSmath.js", "AMSsymbols.js"]
+                }
+            }
+        });
+
+        MathJax.Hub.Queue(function () {
+            
+            
+            
+            var all = MathJax.Hub.getAllJax(), i;
+            for (i = 0; i < all.length; i += 1) {
+                all[i].SourceElement().parentNode.className += ' has-jax';
+            }
+        });
+    </script>
+
+<style>
+    code.has-jax {
+        font: inherit;
+        font-size: 100%;
+        background: #fbfbfb;
+        border: inherit;
+        color: #303030;
+    }
+</style>
+

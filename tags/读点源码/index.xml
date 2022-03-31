@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>读点源码 on wuliuqi</title>
+    <link>https://wuliuqii.github.io/tags/%E8%AF%BB%E7%82%B9%E6%BA%90%E7%A0%81/</link>
+    <description>Recent content in 读点源码 on wuliuqi</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>zh-cn</language>
+    <lastBuildDate>Thu, 31 Mar 2022 08:30:43 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/%E8%AF%BB%E7%82%B9%E6%BA%90%E7%A0%81/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Goleveldb源码分析（二）缓存</title>
+      <link>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%BA%8C%E7%BC%93%E5%AD%98/</link>
+      <pubDate>Thu, 31 Mar 2022 08:30:43 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%BA%8C%E7%BC%93%E5%AD%98/</guid>
+      <description>缓存 缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：
+ 已打开的sstable文件对象和相关元数据； sstable中的dataBlock的内容。  整体结构 Leveldb中使用的Cache是一种LRUcache，其结构由两部分内容组成：
+ Hash table：用来存储数据； LRU：用来维护数据项的新旧信息。   缓存系统：
+// 缓存 type Cache struct { 	mu sync.RWMutex // 读写锁 	mHead unsafe.Pointer // *mNode 指向哈希表 	nodes int32 // 哈希表中的节点个数 	size int32 // 哈希表大小 	cacher Cacher // 缓存策略 	closed bool // 是否关闭 } 缓存策略：
+// 缓存策略接口，并发安全 // 以下的缓存皆指缓存策略 type Cacher interface { 	// 缓存容量 	Capacity() int  	// 设置缓存容量 	SetCapacity(capacity int)  	// 添加节点的到缓存中 	Promote(n *Node)  	// 将节点从缓存中删除，并尝试将其从哈希表中删除 	Ban(n *Node)  	// 将节点从缓存中删除 	Evict(n *Node)  	// 将所有给定的命名空间的节点从缓存中删除 	EvictNS(ns uint64)  	// 将缓存中的所有节点删除 	EvictAll()  	// 关闭缓存 	Close() error } 实现 再依次看一下上述各个结构实现与核心方法，以及如何组合在一起对外提供缓存的功能。</description>
+    </item>
+    
+    <item>
+      <title>Goleveldb源码分析（一）编码</title>
+      <link>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%80%E7%BC%96%E7%A0%81/</link>
+      <pubDate>Thu, 31 Mar 2022 08:30:25 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%80%E7%BC%96%E7%A0%81/</guid>
+      <description>LevelDB 研究一下基于Go语言的Leveldb的源码，参考作者的配套wiki。
+Leveldb的整体流程如下图所示 基础 先从一些外围基础的概念开始看起。
+编码 Leveldb使用encoding/binary标准库对数据进行编解码，这里将详细介绍它的规则。
+大小端 字节序简单来说就是多字节对象在内存中的排列顺序，主要分为两种，大端序和小端序。
+大端序，高位存在较大地址处。 示例中，最高位字节是0x0A 存储在最低的内存地址处。下一个字节0x0B存在后面的地址处。正类似于十六进制字节从左到右的阅读顺序。
+小端序，低位存在较大地址处。 最低位字节是0x0D 存储在最低的内存地址处。后面字节依次存在后面的地址处。
+在encoding/binary中定义了字节序的接口，同时也定义了大小端
+type ByteOrder interface { 	Uint16([]byte) uint16 	Uint32([]byte) uint32 	Uint64([]byte) uint64 	PutUint16([]byte, uint16) 	PutUint32([]byte, uint32) 	PutUint64([]byte, uint64) 	String() string }  type littleEndian struct{} var LittleEndian littleEndian  type bigEndian struct{} var BigEndian bigEndian 看下编码的实例
+package main  import ( 	&amp;#34;encoding/binary&amp;#34; 	&amp;#34;fmt&amp;#34; )  func BigEndian() { // 大端序 	// 二进制形式：0000 0000 0000 0000 0001 0002 0003 0004 	var testInt int32 = 0x01020304 // 十六进制表示 	fmt.</description>
+    </item>
+    
+  </channel>
+</rss>

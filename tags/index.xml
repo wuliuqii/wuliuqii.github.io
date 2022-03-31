@@ -6,7 +6,25 @@
     <description>Recent content in Tags on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Mon, 10 Jan 2022 23:37:13 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Thu, 31 Mar 2022 08:30:43 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>go</title>
+      <link>https://wuliuqii.github.io/tags/go/</link>
+      <pubDate>Thu, 31 Mar 2022 08:30:43 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/tags/go/</guid>
+      <description></description>
+    </item>
+    
+    <item>
+      <title>读点源码</title>
+      <link>https://wuliuqii.github.io/tags/%E8%AF%BB%E7%82%B9%E6%BA%90%E7%A0%81/</link>
+      <pubDate>Thu, 31 Mar 2022 08:30:43 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/tags/%E8%AF%BB%E7%82%B9%E6%BA%90%E7%A0%81/</guid>
+      <description></description>
+    </item>
+    
     <item>
       <title>Golang</title>
       <link>https://wuliuqii.github.io/tags/golang/</link>
@@ -40,15 +58,6 @@
       <pubDate>Sun, 24 Oct 2021 16:01:03 +0800</pubDate>
       
       <guid>https://wuliuqii.github.io/tags/contest/</guid>
-      <description></description>
-    </item>
-    
-    <item>
-      <title>MapReduce</title>
-      <link>https://wuliuqii.github.io/tags/mapreduce/</link>
-      <pubDate>Sun, 09 May 2021 20:30:53 +0800</pubDate>
-      
-      <guid>https://wuliuqii.github.io/tags/mapreduce/</guid>
       <description></description>
     </item>
     

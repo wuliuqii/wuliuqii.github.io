@@ -9,10 +9,10 @@
     <lastBuildDate>Thu, 02 Apr 2020 10:34:27 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/categories/os/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Ostep  Virtualization</title>
-      <link>https://wuliuqii.github.io/posts/ostep-virtualization/</link>
+      <link>https://wuliuqii.github.io/posts/ostep--virtualization/</link>
       <pubDate>Thu, 02 Apr 2020 10:34:27 +0800</pubDate>
       
-      <guid>https://wuliuqii.github.io/posts/ostep-virtualization/</guid>
+      <guid>https://wuliuqii.github.io/posts/ostep--virtualization/</guid>
       <description>CPU 虚拟化 操作系统通过低级机制和高级策略实现 CPU 虚拟化。机制就是一些低级方法和协议，如上下切换，时分共享。策略是在操作系统中作出某种决定的算法。
  你可以将机制看 成为系统的“如何（how）”问题提供答案。例如，操作系统如何执行上下文切换？策略为“哪个（which）” 问题提供答案。例如，操作系统现在应该运行哪个进程？将两者分开可以轻松地改变策略，而不必重新考虑机制，因此这是一种模块化（modularity）的形式，一种通用的软件设计原则。
  进程 进程：运行中的程序。
