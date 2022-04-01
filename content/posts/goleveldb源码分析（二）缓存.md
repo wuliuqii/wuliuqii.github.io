@@ -6,14 +6,12 @@ tags: [go, 读点源码]
 draft: false
 ---
 
- # 缓存
-
 缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：   
 
 - 已打开的sstable文件对象和相关元数据；   
 - sstable中的dataBlock的内容。   
 
- ## 整体结构
+## 整体结构
 
 Leveldb中使用的Cache是一种LRUcache，其结构由两部分内容组成：   
 
@@ -571,5 +569,5 @@ func (r *Cache) getBucket(hash uint32) (*mNode, *mBucket) {
 
 Cache对Leveldb提供两个主要的接口，Get和Delete，用来添加和删除数据，当然还有一些其他比较简单的接口，这里也不逐行分析，比较简单。
 
-至此，我们对Leveldb的缓存系统的分析已经完成了，完整的注释代码在[[goleveldb-annotation](https://github.com/wuliuqii/goleveldb-annotation/tree/master/leveldb/cache)。
+至此，我们对Leveldb的缓存系统的分析已经完成了，完整的注释代码在[goleveldb-annotation](https://github.com/wuliuqii/goleveldb-annotation/tree/master/leveldb/cache)。
 

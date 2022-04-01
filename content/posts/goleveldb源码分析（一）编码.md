@@ -6,8 +6,6 @@ tags: [go, 读点源码]
 draft: false
 ---
 
- # LevelDB
-
 研究一下基于Go语言的[Leveldb](https://github.com/syndtr/goleveldb)的源码，参考作者的配套[wiki](https://leveldb-handbook.readthedocs.io/zh/latest/rwopt.html)。
 
 Leveldb的整体流程如下图所示
@@ -26,14 +24,14 @@ Leveldb使用encoding/binary标准库对数据进行编解码，这里将详细�
 字节序简单来说就是多字节对象在内存中的排列顺序，主要分为两种，大端序和小端序。
 
 大端序，高位存在较大地址处。
-![image.png](C:\Users\18273\Desktop\Anytype.20220331.082447.73\files\x_image.png) 
-![image.png](C:\Users\18273\Desktop\Anytype.20220331.082447.73\files\9_image.png)    
+<img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/x_image.png" alt="image.png" style="zoom:50%;" /> 
+<img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/9_image.png" alt="image.png" style="zoom:67%;" />    
 
 示例中，最高位字节是0x0A 存储在最低的内存地址处。下一个字节0x0B存在后面的地址处。正类似于十六进制字节从左到右的阅读顺序。
 
 小端序，低位存在较大地址处。
-![image.png](C:\Users\18273\Desktop\Anytype.20220331.082447.73\files\b_image.png) 
-![image.png](C:\Users\18273\Desktop\Anytype.20220331.082447.73\files\c_image.png)    
+<img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/b_image.png" alt="image.png" style="zoom:50%;" /> 
+<img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/c_image.png" alt="image.png" style="zoom:67%;" />    
 
 最低位字节是0x0D 存储在最低的内存地址处。后面字节依次存在后面的地址处。   
 
