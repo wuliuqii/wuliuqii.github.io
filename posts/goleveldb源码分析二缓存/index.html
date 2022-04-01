@@ -37,8 +37,7 @@
             datetime="2022-03-31 08:30:43 &#43;0800">31 Mar 2022</time>
     </header>
 
-    <h1 id="缓存">缓存</h1>
-<p>缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：</p>
+    <p>缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：</p>
 <ul>
 <li>已打开的sstable文件对象和相关元数据；</li>
 <li>sstable中的dataBlock的内容。</li>
@@ -543,7 +542,7 @@
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">h</span>, <span style="color:#a6e22e">b</span>
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p>Cache对Leveldb提供两个主要的接口，Get和Delete，用来添加和删除数据，当然还有一些其他比较简单的接口，这里也不逐行分析，比较简单。</p>
-<p>至此，我们对Leveldb的缓存系统的分析已经完成了，完整的注释代码在[<a href="https://github.com/wuliuqii/goleveldb-annotation/tree/master/leveldb/cache">goleveldb-annotation</a>。</p>
+<p>至此，我们对Leveldb的缓存系统的分析已经完成了，完整的注释代码在<a href="https://github.com/wuliuqii/goleveldb-annotation/tree/master/leveldb/cache">goleveldb-annotation</a>。</p>
 
 
 </article>

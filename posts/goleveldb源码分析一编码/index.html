@@ -37,8 +37,7 @@
             datetime="2022-03-31 08:30:25 &#43;0800">31 Mar 2022</time>
     </header>
 
-    <h1 id="leveldb">LevelDB</h1>
-<p>研究一下基于Go语言的<a href="https://github.com/syndtr/goleveldb">Leveldb</a>的源码，参考作者的配套<a href="https://leveldb-handbook.readthedocs.io/zh/latest/rwopt.html">wiki</a>。</p>
+    <p>研究一下基于Go语言的<a href="https://github.com/syndtr/goleveldb">Leveldb</a>的源码，参考作者的配套<a href="https://leveldb-handbook.readthedocs.io/zh/latest/rwopt.html">wiki</a>。</p>
 <p>Leveldb的整体流程如下图所示
 <img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/image.png" alt="image.png"></p>
 <h2 id="基础">基础</h2>
@@ -48,12 +47,12 @@
 <h4 id="大小端httpswwwwikiwandcomenendianness"><a href="https://www.wikiwand.com/en/Endianness">大小端</a></h4>
 <p>字节序简单来说就是多字节对象在内存中的排列顺序，主要分为两种，大端序和小端序。</p>
 <p>大端序，高位存在较大地址处。
-<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5Cx_image.png" alt="image.png">
-<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5C9_image.png" alt="image.png"></p>
+<!-- raw HTML omitted -->
+<!-- raw HTML omitted --></p>
 <p>示例中，最高位字节是0x0A 存储在最低的内存地址处。下一个字节0x0B存在后面的地址处。正类似于十六进制字节从左到右的阅读顺序。</p>
 <p>小端序，低位存在较大地址处。
-<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5Cb_image.png" alt="image.png">
-<img src="C:%5CUsers%5C18273%5CDesktop%5CAnytype.20220331.082447.73%5Cfiles%5Cc_image.png" alt="image.png"></p>
+<!-- raw HTML omitted -->
+<!-- raw HTML omitted --></p>
 <p>最低位字节是0x0D 存储在最低的内存地址处。后面字节依次存在后面的地址处。</p>
 <p>在encoding/binary中定义了字节序的接口，同时也定义了大小端</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">ByteOrder</span> <span style="color:#66d9ef">interface</span> {

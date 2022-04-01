@@ -6,14 +6,34 @@
     <description>Recent content in go on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Thu, 31 Mar 2022 08:30:43 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/go/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Fri, 01 Apr 2022 08:19:43 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/go/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Goleveldb源码分析（三）布隆过滤器</title>
+      <link>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%89%E5%B8%83%E9%9A%86%E8%BF%87%E6%BB%A4%E5%99%A8/</link>
+      <pubDate>Fri, 01 Apr 2022 08:19:43 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%89%E5%B8%83%E9%9A%86%E8%BF%87%E6%BB%A4%E5%99%A8/</guid>
+      <description>布隆过滤器是一种空间效率很高的随机数据结构，它利用位数组很简洁地表示一个集合，并能判断一个元素是否属于这个集合。布隆过滤器的这种高效是有一定代价的：在判断一个元素是否属于某个集合时，有可能会把不属于这个集合的元素误认为属于这个集合（false positive）。因此，布隆过滤器不适合那些零错误的应用场合。而在能容忍低错误率的应用场合下，布隆过滤器通过极少的错误换取了存储空间的极大节省。
+Leveldb中利用布隆过滤器判断指定的key值是否存在于sstable中，若过滤器表示不存在，则该key一定不存在，由此加快了查找的效率。
+结构 布隆过滤器底层是一个位数组，初始时每一位都是0
+当插入值x后，分别利用k个哈希函数（图中为3）利用x的值进行散列，并将散列得到的值与布隆过滤器的容量进行取余，将取余结果所代表的那一位值置为1。
+一次查找过程与一次插入过程类似，同样利用k个哈希函数对所需要查找的值进行散列，只有散列得到的每一个位的值均为1，才表示该值“有可能”真正存在；反之若有任意一位的值为0，则表示该值一定不存在。例如y1一定不存在；而y2可能存在。
+数学结论1 首先，与布隆过滤器准确率有关的参数有：
+ 哈希函数的个数k； 布隆过滤器位数组的容量m; 布隆过滤器插入的数据数量n。  主要的数学结论有：
+ 为了获得最优的准确率，当$k = ln2 * (m/n$)时，布隆过滤器获得最优的准确性； 在哈希函数的个数取到最优时，要让错误率不超过є，m至少需要取到最小值的1.44倍。  实现 goleveldb中，布隆过滤器的定义只是一个int数字
+type bloomFilter int 创建一个布隆过滤器时，只需要指定为每个key分配的位数即可，如结论2所示，只要该值（m/n）大于1.44即可，一般可以取10。
+func NewBloomFilter(bitsPerKey int) Filter {  return bloomFilter(bitsPerKey) } 创建一个Generator, 这一步中需要指定哈希函数的个数k，可以看到$k = f * ln2$，而$f = m/n$，即数学结论1。
+返回的Generator中可以添加新的key信息，调用Generate函数时，将所有的key构建成一个位数组写在指定的位置。
+type bloomFilterGenerator struct { 	n int // 插入的数据量 	k uint8 // hash 函数的个数  	keyHashes []uint32 }  func (f bloomFilter) NewGenerator() FilterGenerator {  // Round down to reduce probing cost a little bit.</description>
+    </item>
+    
     <item>
       <title>Goleveldb源码分析（二）缓存</title>
       <link>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%BA%8C%E7%BC%93%E5%AD%98/</link>
       <pubDate>Thu, 31 Mar 2022 08:30:43 +0800</pubDate>
       
       <guid>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%BA%8C%E7%BC%93%E5%AD%98/</guid>
-      <description>缓存 缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：
+      <description>缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：
  已打开的sstable文件对象和相关元数据； sstable中的dataBlock的内容。  整体结构 Leveldb中使用的Cache是一种LRUcache，其结构由两部分内容组成：
  Hash table：用来存储数据； LRU：用来维护数据项的新旧信息。   缓存系统：
 // 缓存 type Cache struct { 	mu sync.RWMutex // 读写锁 	mHead unsafe.Pointer // *mNode 指向哈希表 	nodes int32 // 哈希表中的节点个数 	size int32 // 哈希表大小 	cacher Cacher // 缓存策略 	closed bool // 是否关闭 } 缓存策略：
@@ -26,7 +46,7 @@
       <pubDate>Thu, 31 Mar 2022 08:30:25 +0800</pubDate>
       
       <guid>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%80%E7%BC%96%E7%A0%81/</guid>
-      <description>LevelDB 研究一下基于Go语言的Leveldb的源码，参考作者的配套wiki。
+      <description>研究一下基于Go语言的Leveldb的源码，参考作者的配套wiki。
 Leveldb的整体流程如下图所示 基础 先从一些外围基础的概念开始看起。
 编码 Leveldb使用encoding/binary标准库对数据进行编解码，这里将详细介绍它的规则。
 大小端 字节序简单来说就是多字节对象在内存中的排列顺序，主要分为两种，大端序和小端序。
