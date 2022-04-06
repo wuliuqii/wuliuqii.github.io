@@ -183,3 +183,98 @@ func main() {
 // 11110001001000000
 ```
 
+## Batch
+
+Leveldb对外提供的写入接口有：（1）Put（2）Delete两种。这两种本质对应同一种操作，Delete操作同样会被转换成一个value为空的Put操作。
+
+无论是Put/Del操作，还是批量操作，底层都会为这些操作创建一个batch实例作为一个数据库操作的最小执行单元。因此首先介绍一下batch的组织结构。
+
+![img](https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/batch.jpeg)
+
+在batch中，每一条数据项都按照上图格式进行编码。每条数据项编码后的第一位是这条数据项的类型（更新还是删除），之后是数据项key的长度，数据项key的内容；若该数据项不是删除操作，则再加上value的长度，value的内容。
+
+batch中会维护一个size值，用于表示其中包含的数据量的大小。该size值为所有数据项key与value长度的累加，以及每条数据项额外的8个字节。这8个字节用于存储一条数据项额外的一些信息。
+
+```go
+// 用来进行批处理操作
+type Batch struct {
+	// +------+------------+-----+--------------+-------+
+	// | type | key length | key | value length | value |
+	// +------+------------+-----+--------------+-------+
+	data  []byte       // 数据项编码形式如上所示，value和value length只有在Put操作的时候才有
+	index []batchIndex // data 的元信息
+
+	// internalLen is sums of key/value pair length plus 8-bytes internal key.
+	internalLen int // (key length+value length+8)*数据项个数
+}
+```
+
+写操作（1）Put（2）Delete底层都是通过appendRec实现的
+
+```go
+func (b *Batch) Put(key, value []byte) {
+	b.appendRec(keyTypeVal, key, value)
+}
+
+func (b *Batch) Delete(key []byte) {
+	b.appendRec(keyTypeDel, key, nil)
+}
+
+// 不使用slice默认的扩容策略
+func (b *Batch) grow(n int) {
+	o := len(b.data)
+	if cap(b.data)-o < n {
+		// 容量不够了，需要扩容
+		// 默认扩大到现在的数据项+n+数据项/系数
+		// 默认的系数为1
+		div := 1
+		if len(b.index) > batchGrowRec {
+			// 数据项超过3000，则系数变为数据项/3000
+			div = len(b.index) / batchGrowRec
+		}
+		ndata := make([]byte, o, o+n+o/div)
+		copy(ndata, b.data)
+		b.data = ndata
+	}
+}
+
+// +------+------------+-----+--------------+-------+
+// | type | key length | key | value length | value |
+// +------+------------+-----+--------------+-------+
+func (b *Batch) appendRec(kt keyType, key, value []byte) {
+	// (type+key+key length)
+	n := 1 + binary.MaxVarintLen32 + len(key)
+	if kt == keyTypeVal {
+		// Put操作还要加上 value+value length
+		n += binary.MaxVarintLen32 + len(value)
+	}
+	// 确保容量足够
+	b.grow(n)
+	index := batchIndex{keyType: kt}
+	o := len(b.data)
+	data := b.data[:o+n]
+	// type
+	data[o] = byte(kt)
+	o++
+	// key length
+	o += binary.PutUvarint(data[o:], uint64(len(key)))
+	index.keyPos = o
+	index.keyLen = len(key)
+	// key
+	o += copy(data[o:], key)
+	if kt == keyTypeVal {
+		// value length
+		o += binary.PutUvarint(data[o:], uint64(len(value)))
+		index.valuePos = o
+		index.valueLen = len(value)
+		// value
+		o += copy(data[o:], value)
+	}
+	b.data = data[:o]
+	b.index = append(b.index, index)
+	b.internalLen += index.keyLen + index.valueLen + 8
+}
+```
+
+
+
