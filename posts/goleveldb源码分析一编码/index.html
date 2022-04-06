@@ -183,7 +183,87 @@
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">// [11000000 11000100 111 0 0 0 0 0 0 0]
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">// c0c40700000000000000
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 11110001001000000
-</span></span></span></code></pre></div>
+</span></span></span></code></pre></div><h2 id="batch">Batch</h2>
+<p>Leveldb对外提供的写入接口有：（1）Put（2）Delete两种。这两种本质对应同一种操作，Delete操作同样会被转换成一个value为空的Put操作。</p>
+<p>无论是Put/Del操作，还是批量操作，底层都会为这些操作创建一个batch实例作为一个数据库操作的最小执行单元。因此首先介绍一下batch的组织结构。</p>
+<p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/batch.jpeg" alt="img"></p>
+<p>在batch中，每一条数据项都按照上图格式进行编码。每条数据项编码后的第一位是这条数据项的类型（更新还是删除），之后是数据项key的长度，数据项key的内容；若该数据项不是删除操作，则再加上value的长度，value的内容。</p>
+<p>batch中会维护一个size值，用于表示其中包含的数据量的大小。该size值为所有数据项key与value长度的累加，以及每条数据项额外的8个字节。这8个字节用于存储一条数据项额外的一些信息。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// 用来进行批处理操作
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Batch</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// +------+------------+-----+--------------+-------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// | type | key length | key | value length | value |
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// +------+------------+-----+--------------+-------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">data</span>  []<span style="color:#66d9ef">byte</span>       <span style="color:#75715e">// 数据项编码形式如上所示，value和value length只有在Put操作的时候才有
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">index</span> []<span style="color:#a6e22e">batchIndex</span> <span style="color:#75715e">// data 的元信息
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// internalLen is sums of key/value pair length plus 8-bytes internal key.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">internalLen</span> <span style="color:#66d9ef">int</span> <span style="color:#75715e">// (key length+value length+8)*数据项个数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p>写操作（1）Put（2）Delete底层都是通过appendRec实现的</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">b</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Batch</span>) <span style="color:#a6e22e">Put</span>(<span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">value</span> []<span style="color:#66d9ef">byte</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">appendRec</span>(<span style="color:#a6e22e">keyTypeVal</span>, <span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">value</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">b</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Batch</span>) <span style="color:#a6e22e">Delete</span>(<span style="color:#a6e22e">key</span> []<span style="color:#66d9ef">byte</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">appendRec</span>(<span style="color:#a6e22e">keyTypeDel</span>, <span style="color:#a6e22e">key</span>, <span style="color:#66d9ef">nil</span>)
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 不使用slice默认的扩容策略
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">b</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Batch</span>) <span style="color:#a6e22e">grow</span>(<span style="color:#a6e22e">n</span> <span style="color:#66d9ef">int</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">o</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">data</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> cap(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">data</span>)<span style="color:#f92672">-</span><span style="color:#a6e22e">o</span> &lt; <span style="color:#a6e22e">n</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 容量不够了，需要扩容
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">// 默认扩大到现在的数据项+n+数据项/系数
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">// 默认的系数为1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">div</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> len(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">index</span>) &gt; <span style="color:#a6e22e">batchGrowRec</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 数据项超过3000，则系数变为数据项/3000
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">div</span> = len(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">index</span>) <span style="color:#f92672">/</span> <span style="color:#a6e22e">batchGrowRec</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">ndata</span> <span style="color:#f92672">:=</span> make([]<span style="color:#66d9ef">byte</span>, <span style="color:#a6e22e">o</span>, <span style="color:#a6e22e">o</span><span style="color:#f92672">+</span><span style="color:#a6e22e">n</span><span style="color:#f92672">+</span><span style="color:#a6e22e">o</span><span style="color:#f92672">/</span><span style="color:#a6e22e">div</span>)
+</span></span><span style="display:flex;"><span>		copy(<span style="color:#a6e22e">ndata</span>, <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">data</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">data</span> = <span style="color:#a6e22e">ndata</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// +------+------------+-----+--------------+-------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// | type | key length | key | value length | value |
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// +------+------------+-----+--------------+-------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">b</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Batch</span>) <span style="color:#a6e22e">appendRec</span>(<span style="color:#a6e22e">kt</span> <span style="color:#a6e22e">keyType</span>, <span style="color:#a6e22e">key</span>, <span style="color:#a6e22e">value</span> []<span style="color:#66d9ef">byte</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// (type+key+key length)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">MaxVarintLen32</span> <span style="color:#f92672">+</span> len(<span style="color:#a6e22e">key</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">kt</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">keyTypeVal</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Put操作还要加上 value+value length
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">n</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">MaxVarintLen32</span> <span style="color:#f92672">+</span> len(<span style="color:#a6e22e">value</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 确保容量足够
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">grow</span>(<span style="color:#a6e22e">n</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">index</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">batchIndex</span>{<span style="color:#a6e22e">keyType</span>: <span style="color:#a6e22e">kt</span>}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">o</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">data</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">data</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">data</span>[:<span style="color:#a6e22e">o</span><span style="color:#f92672">+</span><span style="color:#a6e22e">n</span>]
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// type
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">data</span>[<span style="color:#a6e22e">o</span>] = byte(<span style="color:#a6e22e">kt</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">o</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// key length
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">o</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">PutUvarint</span>(<span style="color:#a6e22e">data</span>[<span style="color:#a6e22e">o</span>:], uint64(len(<span style="color:#a6e22e">key</span>)))
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">index</span>.<span style="color:#a6e22e">keyPos</span> = <span style="color:#a6e22e">o</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">index</span>.<span style="color:#a6e22e">keyLen</span> = len(<span style="color:#a6e22e">key</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// key
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">o</span> <span style="color:#f92672">+=</span> copy(<span style="color:#a6e22e">data</span>[<span style="color:#a6e22e">o</span>:], <span style="color:#a6e22e">key</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">kt</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">keyTypeVal</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// value length
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">o</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">PutUvarint</span>(<span style="color:#a6e22e">data</span>[<span style="color:#a6e22e">o</span>:], uint64(len(<span style="color:#a6e22e">value</span>)))
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">index</span>.<span style="color:#a6e22e">valuePos</span> = <span style="color:#a6e22e">o</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">index</span>.<span style="color:#a6e22e">valueLen</span> = len(<span style="color:#a6e22e">value</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// value
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">o</span> <span style="color:#f92672">+=</span> copy(<span style="color:#a6e22e">data</span>[<span style="color:#a6e22e">o</span>:], <span style="color:#a6e22e">value</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">data</span> = <span style="color:#a6e22e">data</span>[:<span style="color:#a6e22e">o</span>]
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">index</span> = append(<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">index</span>, <span style="color:#a6e22e">index</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">b</span>.<span style="color:#a6e22e">internalLen</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">index</span>.<span style="color:#a6e22e">keyLen</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">index</span>.<span style="color:#a6e22e">valueLen</span> <span style="color:#f92672">+</span> <span style="color:#ae81ff">8</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div>
 
 </article>
 

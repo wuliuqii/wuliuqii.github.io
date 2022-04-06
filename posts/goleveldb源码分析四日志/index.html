@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="generator" content="Hugo 0.96.0" />
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="author" content="">
+  <meta property="og:url" content="https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E5%9B%9B%E6%97%A5%E5%BF%97/">
+
+  <title>Goleveldb源码分析（四）日志 - wuliuqi</title>
+  <meta property="og:title" content="Goleveldb源码分析（四）日志 - wuliuqi">
+  <meta property="og:type" content="article">
+  <meta name="description" content="">
+
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Code+Pro|Arvo:400,700">
+  <link rel="stylesheet" href="/css/highlight.css">
+  <link rel="stylesheet" href="/css/journal.css">
+  <link href="/index.xml" rel="alternate" type="application/rss+xml" title="wuliuqi">
+
+</head>
+
+<body>
+  <div class="container">
+
+    <nav class="site-nav">
+      <a href="https://wuliuqii.github.io/">Index</a>
+    </nav>
+
+
+<article class="post">
+    <header class="post-header">
+        <h1 class="post-title">Goleveldb源码分析（四）日志</h1>
+        <time class="post-date"
+            datetime="2022-04-05 09:13:33 &#43;0800">05 Apr 2022</time>
+    </header>
+
+    <p>为了防止写入内存的数据库因为进程异常、系统掉电等情况发生丢失，Leveldb在写内存之前会将本次写操作的内容写入日志文件中。</p>
+<p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/two_log.jpeg" alt="img"></p>
+<p>在Leveldb中，有两个memory db，以及对应的两份日志文件。其中一个memory db是可读写的，当这个db的数据量超过预定的上限时，便会转换成一个不可写的memory db，与此同时，与之对应的日志文件也变成一份frozen log。</p>
+<p>而新生成的immutable memory db则会由后台的minor compaction进程将其转换成一个sstable文件进行持久化，持久化完成，与之对应的frozen log被删除。</p>
+<p>在本文中主要分析日志的结构、写入读取操作。</p>
+<h2 id="日志结构">日志结构</h2>
+<p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/journal.jpeg" alt="img"></p>
+<p>为了增加读取效率，日志文件中按照block进行划分，每个block的大小为32KiB。每个block中包含了若干个完整的chunk。</p>
+<p>一条日志记录包含一个或多个chunk。每个chunk包含了一个7字节大小的header，前4字节是该chunk的校验码，紧接的2字节是该chunk数据的长度，以及最后一个字节是该chunk的类型。其中checksum校验的范围包括chunk的类型以及随后的data数据。</p>
+<p>chunk共有四种类型：full，first，middle，last。一条日志记录若只包含一个chunk，则该chunk的类型为full。若一条日志记录包含多个chunk，则这些chunk的第一个类型为first, 最后一个类型为last，中间包含大于等于0个middle类型的chunk。</p>
+<p>由于一个block的大小为32KiB，因此当一条日志文件过大时，会将第一部分数据写在第一个block中，且类型为first，若剩余的数据仍然超过一个block的大小，则第二部分数据写在第二个block中，类型为middle，最后剩余的数据写在最后一个block中，类型为last。</p>
+<h2 id="日志写">日志写</h2>
+<p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/journal_write.jpeg" alt="img"></p>
+<p>日志写入流程较为简单，在leveldb内部，实现了一个journal的writer。首先调用Next函数获取一个singleWriter，这个singleWriter的作用就是写入<strong>一条journal记录</strong>。</p>
+<p>singleWriter开始写入时，标志着第一个chunk开始写入。在写入的过程中，不断判断writer中buffer的大小，若超过32KiB，将chunk开始到现在做为一个完整的chunk，为其计算header之后将整个chunk写入文件。与此同时reset buffer，开始新的chunk的写入。</p>
+<p>若一条journal记录较大，则可能会分成几个chunk存储在若干个block中。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Writer</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span> <span style="color:#a6e22e">io</span>.<span style="color:#a6e22e">Writer</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 充当逻辑时钟
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">seq</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">f</span> <span style="color:#a6e22e">flusher</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// buf[i:j] 表示当前的chunk，i下标包括chunk header
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">i</span>, <span style="color:#a6e22e">j</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 已经写入的下标
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">written</span> <span style="color:#66d9ef">int</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 是否为第一个chunk
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">first</span> <span style="color:#66d9ef">bool</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 是否数据已经写入buf，但是还没有落盘（当前block未满32KiB）
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">pending</span> <span style="color:#66d9ef">bool</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">err</span> <span style="color:#66d9ef">error</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 每个block为32KiB
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">buf</span> [<span style="color:#a6e22e">blockSize</span>]<span style="color:#66d9ef">byte</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// chunk header:
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// +-------------------+-----------------+--------------------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// | Checksum(4-bytes) | Length(2-bytes) | Chunk type(1-byte) |
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// +-------------------+-----------------+--------------------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">w</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Writer</span>) <span style="color:#a6e22e">fillHeader</span>(<span style="color:#a6e22e">last</span> <span style="color:#66d9ef">bool</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#a6e22e">headerSize</span> &gt; <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> <span style="color:#f92672">||</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> &gt; <span style="color:#a6e22e">blockSize</span> {
+</span></span><span style="display:flex;"><span>		panic(<span style="color:#e6db74">&#34;leveldb/journal: bad writer state&#34;</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">last</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">first</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">6</span>] = <span style="color:#a6e22e">fullChunkType</span>
+</span></span><span style="display:flex;"><span>		} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">6</span>] = <span style="color:#a6e22e">lastChunkType</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">first</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">6</span>] = <span style="color:#a6e22e">firstChunkType</span>
+</span></span><span style="display:flex;"><span>		} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">6</span>] = <span style="color:#a6e22e">middleChunkType</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">LittleEndian</span>.<span style="color:#a6e22e">PutUint32</span>(<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">0</span>:<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">4</span>], <span style="color:#a6e22e">util</span>.<span style="color:#a6e22e">NewCRC</span>(<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">6</span>:<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span>]).<span style="color:#a6e22e">Value</span>())
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">LittleEndian</span>.<span style="color:#a6e22e">PutUint16</span>(<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">4</span>:<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">+</span><span style="color:#ae81ff">6</span>], uint16(<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span><span style="color:#f92672">-</span><span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span><span style="color:#f92672">-</span><span style="color:#a6e22e">headerSize</span>))
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 将当前block写入文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">w</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Writer</span>) <span style="color:#a6e22e">writeBlock</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span> = <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">Write</span>(<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">written</span>:])
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span> = <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> = <span style="color:#a6e22e">headerSize</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">written</span> = <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 将buf中的数据写入文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">w</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Writer</span>) <span style="color:#a6e22e">writePending</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">pending</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">fillHeader</span>(<span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">pending</span> = <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span> = <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">Write</span>(<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">written</span>:<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span>])
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">written</span> = <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 将当前block写入文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">w</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Writer</span>) <span style="color:#a6e22e">writeBlock</span>() {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span> = <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">Write</span>(<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">written</span>:])
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span> = <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> = <span style="color:#a6e22e">headerSize</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">written</span> = <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 返回回一个singleWriter，用来写入一条日志
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">w</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Writer</span>) <span style="color:#a6e22e">Next</span>() (<span style="color:#a6e22e">io</span>.<span style="color:#a6e22e">Writer</span>, <span style="color:#66d9ef">error</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">seq</span><span style="color:#f92672">++</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">pending</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 为上一个chunk赋header
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">fillHeader</span>(<span style="color:#66d9ef">true</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span> = <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> = <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> <span style="color:#f92672">+</span> <span style="color:#a6e22e">headerSize</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Check if there is room in the block for the header.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> &gt; <span style="color:#a6e22e">blockSize</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 剩余空间不够写入一个header
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">// 将剩余空间置空
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">// Fill in the rest of the block with zeroes.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">k</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">i</span>; <span style="color:#a6e22e">k</span> &lt; <span style="color:#a6e22e">blockSize</span>; <span style="color:#a6e22e">k</span><span style="color:#f92672">++</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">k</span>] = <span style="color:#ae81ff">0</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// 将32KiB的数据写入文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">writeBlock</span>()
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">first</span> = <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">pending</span> = <span style="color:#66d9ef">true</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">singleWriter</span>{<span style="color:#a6e22e">w</span>, <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">seq</span>}, <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">singleWriter</span> <span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span>   <span style="color:#f92672">*</span><span style="color:#a6e22e">Writer</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">seq</span> <span style="color:#66d9ef">int</span> <span style="color:#75715e">// sequence，充当逻辑时钟的作用
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 写入一条日志记录
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 返回值：写入的字节长度，错误
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">x</span> <span style="color:#a6e22e">singleWriter</span>) <span style="color:#a6e22e">Write</span>(<span style="color:#a6e22e">p</span> []<span style="color:#66d9ef">byte</span>) (<span style="color:#66d9ef">int</span>, <span style="color:#66d9ef">error</span>) {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">w</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">x</span>.<span style="color:#a6e22e">w</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 判断当前写入是否ok
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">seq</span> <span style="color:#f92672">!=</span> <span style="color:#a6e22e">x</span>.<span style="color:#a6e22e">seq</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>, <span style="color:#a6e22e">errors</span>.<span style="color:#a6e22e">New</span>(<span style="color:#e6db74">&#34;leveldb/journal: stale writer&#34;</span>)
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>, <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">n0</span> <span style="color:#f92672">:=</span> len(<span style="color:#a6e22e">p</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> len(<span style="color:#a6e22e">p</span>) &gt; <span style="color:#ae81ff">0</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Write a block, if it is full.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> <span style="color:#f92672">==</span> <span style="color:#a6e22e">blockSize</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// 32KiB已满
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#75715e">// 写入文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">fillHeader</span>(<span style="color:#66d9ef">false</span>)
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">writeBlock</span>()
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>, <span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">first</span> = <span style="color:#66d9ef">false</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Copy bytes into the buffer.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">n</span> <span style="color:#f92672">:=</span> copy(<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">buf</span>[<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span>:], <span style="color:#a6e22e">p</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">w</span>.<span style="color:#a6e22e">j</span> <span style="color:#f92672">+=</span> <span style="color:#a6e22e">n</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">p</span> = <span style="color:#a6e22e">p</span>[<span style="color:#a6e22e">n</span>:]
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">n0</span>, <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>日志的内容为<strong>写入的batch编码后的信息</strong>。</p>
+<p>具体的格式为：</p>
+<p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/journal_content.jpeg" alt="img"></p>
+<p>一条日志记录的内容包含：</p>
+<ul>
+<li>Header</li>
+<li>Data</li>
+</ul>
+<p>其中header中有（1）当前db的sequence number（2）本次日志记录中所包含的put/del操作的个数。</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-go" data-lang="go"><span style="display:flex;"><span><span style="color:#75715e">// batch header:
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// +----------+--------------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// | sequence | entry number |
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// +----------+--------------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">encodeBatchHeader</span>(<span style="color:#a6e22e">dst</span> []<span style="color:#66d9ef">byte</span>, <span style="color:#a6e22e">seq</span> <span style="color:#66d9ef">uint64</span>, <span style="color:#a6e22e">batchLen</span> <span style="color:#66d9ef">int</span>) []<span style="color:#66d9ef">byte</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">dst</span> = <span style="color:#a6e22e">ensureBuffer</span>(<span style="color:#a6e22e">dst</span>, <span style="color:#a6e22e">batchHeaderLen</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">LittleEndian</span>.<span style="color:#a6e22e">PutUint64</span>(<span style="color:#a6e22e">dst</span>, <span style="color:#a6e22e">seq</span>)
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">binary</span>.<span style="color:#a6e22e">LittleEndian</span>.<span style="color:#a6e22e">PutUint32</span>(<span style="color:#a6e22e">dst</span>[<span style="color:#ae81ff">8</span>:], uint32(<span style="color:#a6e22e">batchLen</span>))
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">dst</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 写入日志文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// 写入的内容:
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// +--------------+------+-----+------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// | batch header | data | ... | data |
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// +--------------+------+-----+------+
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> <span style="color:#a6e22e">writeBatchesWithHeader</span>(<span style="color:#a6e22e">wr</span> <span style="color:#a6e22e">io</span>.<span style="color:#a6e22e">Writer</span>, <span style="color:#a6e22e">batches</span> []<span style="color:#f92672">*</span><span style="color:#a6e22e">Batch</span>, <span style="color:#a6e22e">seq</span> <span style="color:#66d9ef">uint64</span>) <span style="color:#66d9ef">error</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">wr</span>.<span style="color:#a6e22e">Write</span>(<span style="color:#a6e22e">encodeBatchHeader</span>(<span style="color:#66d9ef">nil</span>, <span style="color:#a6e22e">seq</span>, <span style="color:#a6e22e">batchesLen</span>(<span style="color:#a6e22e">batches</span>))); <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">batch</span> <span style="color:#f92672">:=</span> <span style="color:#66d9ef">range</span> <span style="color:#a6e22e">batches</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">_</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">wr</span>.<span style="color:#a6e22e">Write</span>(<span style="color:#a6e22e">batch</span>.<span style="color:#a6e22e">data</span>); <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// 写日志
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">db</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">DB</span>) <span style="color:#a6e22e">writeJournal</span>(<span style="color:#a6e22e">batches</span> []<span style="color:#f92672">*</span><span style="color:#a6e22e">Batch</span>, <span style="color:#a6e22e">seq</span> <span style="color:#66d9ef">uint64</span>, <span style="color:#a6e22e">sync</span> <span style="color:#66d9ef">bool</span>) <span style="color:#66d9ef">error</span> {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 获取singleWrite
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">wr</span>, <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">db</span>.<span style="color:#a6e22e">journal</span>.<span style="color:#a6e22e">Next</span>()
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 写入日志文件
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">writeBatchesWithHeader</span>(<span style="color:#a6e22e">wr</span>, <span style="color:#a6e22e">batches</span>, <span style="color:#a6e22e">seq</span>); <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// 确保落盘
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">err</span> <span style="color:#f92672">:=</span> <span style="color:#a6e22e">db</span>.<span style="color:#a6e22e">journal</span>.<span style="color:#a6e22e">Flush</span>(); <span style="color:#a6e22e">err</span> <span style="color:#f92672">!=</span> <span style="color:#66d9ef">nil</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">err</span>
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">sync</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">db</span>.<span style="color:#a6e22e">journalWriter</span>.<span style="color:#a6e22e">Sync</span>()
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nil</span>
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h2 id="日志读">日志读</h2>
+<p><img src="https://cdn.jsdelivr.net/gh/wuliuqii/pic@master/img/journal_read.jpeg" alt="img"></p>
+<p>同样，日志读取也较为简单。为了避免频繁的IO读取，每次从文件中读取数据时，按block（32KiB）进行块读取。</p>
+<p>每次读取一条日志记录，reader调用Next函数返回一个singleReader。singleReader每次调用Read函数就返回一个chunk的数据。每次读取一个chunk，都会检查这批数据的校验码、数据类型、数据长度等信息是否正确，若不正确，且用户要求严格的正确性，则返回错误，否则丢弃整个chunk的数据。</p>
+<p>循环调用singleReader的read函数，直至读取到一个类型为Last的chunk，表示整条日志记录都读取完毕，返回。</p>
+<p>读日志的代码和写的差不多，只不过做多更多的校验，这里不再贴出来。</p>
+
+
+</article>
+
+<footer class="site-footer">
+    <span itemscope itemtype="http://schema.org/Person">
+        <link itemprop="url" href="https://wuliuqii.github.io/">
+        <span itemprop="name"></span>
+
+        <br>
+
+        
+
+        
+
+        
+    </span>
+
+
+    <br><br>
+
+    <div style="text-align:center">
+        <small>
+            <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/"><img
+                    alt="Creative Commons License" style="border-width:0"
+                    src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a><br />Content of this site is
+            licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/4.0/">Creative Commons
+                Attribution-NonCommercial-ShareAlike 4.0 International License</a>.
+        </small>
+    </div>
+
+    
+</footer>
+</div>
+
+<script src="/js/highlight.pack.js"></script>
+<script>hljs.initHighlightingOnLoad();</script>
+
+</body>
+
+</html>
+
+<script type="text/javascript" async
+    src="https://cdn.bootcss.com/mathjax/2.7.3/MathJax.js?config=TeX-AMS-MML_HTMLorMML">
+        MathJax.Hub.Config({
+            tex2jax: {
+                inlineMath: [['$', '$'], ['\\(', '\\)']],
+                displayMath: [['$$', '$$'], ['\[\[', '\]\]']],
+                processEscapes: true,
+                processEnvironments: true,
+                skipTags: ['script', 'noscript', 'style', 'textarea', 'pre'],
+                TeX: {
+                    equationNumbers: {autoNumber: "AMS"},
+                    extensions: ["AMSmath.js", "AMSsymbols.js"]
+                }
+            }
+        });
+
+        MathJax.Hub.Queue(function () {
+            
+            
+            
+            var all = MathJax.Hub.getAllJax(), i;
+            for (i = 0; i < all.length; i += 1) {
+                all[i].SourceElement().parentNode.className += ' has-jax';
+            }
+        });
+    </script>
+
+<style>
+    code.has-jax {
+        font: inherit;
+        font-size: 100%;
+        background: #fbfbfb;
+        border: inherit;
+        color: #303030;
+    }
+</style>
+

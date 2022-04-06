@@ -6,7 +6,27 @@
     <description>Recent content in go on wuliuqi</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Fri, 01 Apr 2022 08:19:43 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/go/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Tue, 05 Apr 2022 09:13:33 +0800</lastBuildDate><atom:link href="https://wuliuqii.github.io/tags/go/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Goleveldb源码分析（四）日志</title>
+      <link>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E5%9B%9B%E6%97%A5%E5%BF%97/</link>
+      <pubDate>Tue, 05 Apr 2022 09:13:33 +0800</pubDate>
+      
+      <guid>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E5%9B%9B%E6%97%A5%E5%BF%97/</guid>
+      <description>为了防止写入内存的数据库因为进程异常、系统掉电等情况发生丢失，Leveldb在写内存之前会将本次写操作的内容写入日志文件中。
+在Leveldb中，有两个memory db，以及对应的两份日志文件。其中一个memory db是可读写的，当这个db的数据量超过预定的上限时，便会转换成一个不可写的memory db，与此同时，与之对应的日志文件也变成一份frozen log。
+而新生成的immutable memory db则会由后台的minor compaction进程将其转换成一个sstable文件进行持久化，持久化完成，与之对应的frozen log被删除。
+在本文中主要分析日志的结构、写入读取操作。
+日志结构 为了增加读取效率，日志文件中按照block进行划分，每个block的大小为32KiB。每个block中包含了若干个完整的chunk。
+一条日志记录包含一个或多个chunk。每个chunk包含了一个7字节大小的header，前4字节是该chunk的校验码，紧接的2字节是该chunk数据的长度，以及最后一个字节是该chunk的类型。其中checksum校验的范围包括chunk的类型以及随后的data数据。
+chunk共有四种类型：full，first，middle，last。一条日志记录若只包含一个chunk，则该chunk的类型为full。若一条日志记录包含多个chunk，则这些chunk的第一个类型为first, 最后一个类型为last，中间包含大于等于0个middle类型的chunk。
+由于一个block的大小为32KiB，因此当一条日志文件过大时，会将第一部分数据写在第一个block中，且类型为first，若剩余的数据仍然超过一个block的大小，则第二部分数据写在第二个block中，类型为middle，最后剩余的数据写在最后一个block中，类型为last。
+日志写 日志写入流程较为简单，在leveldb内部，实现了一个journal的writer。首先调用Next函数获取一个singleWriter，这个singleWriter的作用就是写入一条journal记录。
+singleWriter开始写入时，标志着第一个chunk开始写入。在写入的过程中，不断判断writer中buffer的大小，若超过32KiB，将chunk开始到现在做为一个完整的chunk，为其计算header之后将整个chunk写入文件。与此同时reset buffer，开始新的chunk的写入。
+若一条journal记录较大，则可能会分成几个chunk存储在若干个block中。
+type Writer struct { 	w io.Writer 	// 充当逻辑时钟 	seq int 	f flusher 	// buf[i:j] 表示当前的chunk，i下标包括chunk header 	i, j int 	// 已经写入的下标 	written int 	// 是否为第一个chunk 	first bool 	// 是否数据已经写入buf，但是还没有落盘（当前block未满32KiB） 	pending bool 	err error 	// 每个block为32KiB 	buf [blockSize]byte }  // chunk header: // +-------------------+-----------------+--------------------+ // | Checksum(4-bytes) | Length(2-bytes) | Chunk type(1-byte) | // +-------------------+-----------------+--------------------+ func (w *Writer) fillHeader(last bool) { 	if w.</description>
+    </item>
+    
     <item>
       <title>Goleveldb源码分析（三）布隆过滤器</title>
       <link>https://wuliuqii.github.io/posts/goleveldb%E6%BA%90%E7%A0%81%E5%88%86%E6%9E%90%E4%B8%89%E5%B8%83%E9%9A%86%E8%BF%87%E6%BB%A4%E5%99%A8/</link>
