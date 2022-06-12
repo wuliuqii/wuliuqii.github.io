@@ -1,7 +1,7 @@
 ---
 title: "Python GIL 的前世今生"
 date: 2020-03-30T10:10:58+08:00
-draft: false
+draft: true
 categories: [Python, GIL]
 ---
 

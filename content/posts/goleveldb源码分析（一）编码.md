@@ -3,7 +3,7 @@ title: "Goleveldb源码分析（一）编码"
 date: 2022-03-31T08:30:25+08:00
 categories: [goleveldb]
 tags: [go, 读点源码]
-draft: false
+draft: true
 ---
 
 研究一下基于Go语言的[Leveldb](https://github.com/syndtr/goleveldb)的源码，参考作者的配套[wiki](https://leveldb-handbook.readthedocs.io/zh/latest/rwopt.html)。

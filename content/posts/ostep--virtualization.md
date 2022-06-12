@@ -1,7 +1,7 @@
 ---
 title: "Ostep  Virtualization"
 date: 2020-04-02T10:34:27+08:00
-draft: false
+draft: true
 categories: [OS]
 math: true
 ---

@@ -3,7 +3,7 @@ title: "Goleveldb源码分析（二）缓存"
 date: 2022-03-31T08:30:43+08:00
 categories: [goleveldb]
 tags: [go, 读点源码]
-draft: false
+draft: true
 ---
 
 缓存主要的功能就是减少磁盘IO。Leveldb中使用了一种基于LRUCache的缓存机制，用于缓存：   

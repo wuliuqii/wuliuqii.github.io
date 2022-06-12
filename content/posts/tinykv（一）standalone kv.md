@@ -3,7 +3,7 @@ title: "Tinykv（一）Standalone KV"
 date: 2022-04-30T16:19:01+08:00
 categories: [tinykv]
 tags: [go, raft, database]
-draft: false
+draft: true
 ---
 
 [TinyKV](https://github.com/wuliuqii/tinykv) 是基于 [TiKV](https://github.com/tikv/tikv) 的 mini 版分布式 kv 数据库存储部分，是 tikv Talent Plan 课程的一部分。

@@ -3,7 +3,7 @@ title: "Goleveldb源码分析（四）日志"
 date: 2022-04-05T09:13:33+08:00
 categories: [goleveldb]
 tags: [go, 读点源码]
-draft: false
+draft: true
 ---
 
 为了防止写入内存的数据库因为进程异常、系统掉电等情况发生丢失，Leveldb在写内存之前会将本次写操作的内容写入日志文件中。

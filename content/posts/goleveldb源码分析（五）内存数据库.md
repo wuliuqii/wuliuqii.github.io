@@ -3,7 +3,7 @@ title: "Goleveldb源码分析（五）内存数据库"
 date: 2022-04-07T08:13:20+08:00
 categories: [goleveldb]
 tags: [go, 读点源码]
-draft: false
+draft: true
 ---
 
 leveldb中内存数据库用来维护有序的key-value对，其底层是利用跳表实现，绝大多数操作（读／写）的时间复杂度均为O(log n)，有着与平衡树相媲美的操作效率，但是从实现的角度来说简单许多，因此在本文中将介绍一下内存数据库的实现细节。

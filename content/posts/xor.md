@@ -3,7 +3,7 @@ title: "XOR"
 date: 2021-10-28T22:57:41+08:00
 categories: [Foundation]
 tags: [logical operation ]
-draft: false
+draft: true
 ---
 
 # 异或运算
