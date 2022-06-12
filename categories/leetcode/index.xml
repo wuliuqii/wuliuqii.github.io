@@ -16,7 +16,7 @@
       <description>第 264 场周赛 https://leetcode-cn.com/contest/weekly-contest-264?utm_campaign=weekly_contest_2021_cider_264&amp;amp;utm_medium=leetcode_message&amp;amp;utm_source=message&amp;amp;gio_link_id=Y9JBn239
 句子中的有效单词 https://leetcode-cn.com/problems/number-of-valid-words-in-a-sentence/
 思路 直接模拟
-代码 func countValidWords(sentence string) int { 	res := 0 	tokens := strings.Fields(sentence) // 按照空格划分 	for _, token := range tokens { 	if isValid(token) { 	res++ 	} 	} 	return res }  func isValid(token string) bool { 	if strings.ContainsAny(token, &amp;#34;0123456789&amp;#34;) { // 不能有数字 	return false 	}  	n := len(token) 	i := strings.</description>
+代码 func countValidWords(sentence string) int { res := 0 tokens := strings.Fields(sentence) // 按照空格划分 for _, token := range tokens { if isValid(token) { res++ } } return res } func isValid(token string) bool { if strings.ContainsAny(token, &amp;#34;0123456789&amp;#34;) { // 不能有数字 return false } n := len(token) i := strings.IndexByte(token, &amp;#39;-&amp;#39;) if i &amp;gt;= 0 &amp;amp;&amp;amp; (strings.Contains(token[i+1:], &amp;#34;-&amp;#34;) || // 最多只能有一个连字符, 且左右都为小写字母 i == 0 || i == n-1 || !</description>
     </item>
     
   </channel>
